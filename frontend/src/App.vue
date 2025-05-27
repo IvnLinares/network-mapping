@@ -28,6 +28,9 @@ const toggleDarkMode = () => {
     document.body.classList.remove('dark-mode');
   }
   localStorage.setItem('darkMode', isDark.value ? '1' : '0');
+  
+  // Disparar evento para notificar a los componentes sobre el cambio de modo
+  document.dispatchEvent(new CustomEvent('dark-mode-changed', { detail: { isDark: isDark.value } }));
 };
 
 onMounted(async () => {
@@ -49,6 +52,11 @@ onMounted(async () => {
     isDark.value = true;
     document.body.classList.add('dark-mode');
   }
+  
+  // Escuchar el evento toggle-dark-mode desde los componentes
+  document.addEventListener('toggle-dark-mode', () => {
+    toggleDarkMode();
+  });
 });
 
 provide('user', user);

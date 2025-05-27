@@ -1,147 +1,208 @@
 <template>
   <div>
     <MainMenu :userEmail="user?.email" :userRole="userRole" />
-    <div class="container-fluid mt-5 pt-4">      <div class="map-container">
-        <div class="map-header">
-          <h4><i class="fas fa-map-marked-alt"></i> Mapa de Infraestructura</h4>          
-          <div class="map-controls">
-            <div class="btn-group me-2">
-              <button 
-                v-for="mode in editModes" 
-                :key="mode.id" 
-                class="btn btn-sm" 
-                :class="currentEditMode === mode.id ? 'btn-primary' : 'btn-outline-secondary'"
-                @click="setEditMode(mode.id)"
-                :title="mode.title"
-              >
-                <i class="fas" :class="mode.icon"></i>
-              </button>
+    <div class="container-fluid mt-5 pt-4">
+      <div class="row">
+        <div class="col-12 col-lg-9">
+          <div class="map-container">
+            <div class="map-header">
+              <h4><i class="fas fa-map-marked-alt"></i> Mapa de Infraestructura</h4>              <div class="map-controls">
+                <div class="btn-group me-2">
+                  <button 
+                    v-for="mode in editModes" 
+                    :key="mode.id" 
+                    class="btn btn-sm" 
+                    :class="currentEditMode === mode.id ? 'btn-primary' : 'btn-outline-secondary'"
+                    @click="setEditMode(mode.id)"
+                    :title="mode.title"
+                  >
+                    <i class="fas" :class="mode.icon"></i>
+                  </button>
+                </div>
+
+                <div class="btn-group me-2" v-if="currentEditMode === 'addInfrastructure'">
+                  <button 
+                    v-for="type in infrastructureTypes" 
+                    :key="type.id" 
+                    class="btn btn-sm" 
+                    :class="selectedInfraType === type.id ? 'btn-success' : 'btn-outline-secondary'"
+                    @click="selectedInfraType = type.id"
+                    :title="type.name"
+                  >
+                    <i class="fas" :class="type.icon"></i>
+                  </button>
+                </div>                <select class="form-select form-select-sm me-2 location-selector" 
+                  @change="goToLocation($event.target.value)">
+                  <option value="">-- Ir a ubicación --</option>
+                  <optgroup label="Departamentos">
+                    <option v-for="location in locations" :key="location.id" :value="location.id">
+                      {{ location.name }}
+                    </option>
+                  </optgroup>
+                </select>
+
+                <button class="btn btn-sm me-2" :class="showZones ? 'btn-info' : 'btn-outline-info'" @click="toggleZones" title="Mostrar/Ocultar zonas">
+                  <i class="fas fa-draw-polygon"></i>
+                </button>
+
+                <button class="btn btn-sm me-2" :class="isDarkMode ? 'btn-warning' : 'btn-outline-secondary'" @click="toggleDarkMode" title="Alternar modo oscuro del mapa">
+                  <i class="fas" :class="isDarkMode ? 'fa-sun' : 'fa-moon'"></i>
+                </button>
+
+                <button class="btn btn-sm btn-primary" @click="toggleFullscreen">
+                  <i class="fas" :class="isFullscreen ? 'fa-compress' : 'fa-expand'"></i>
+                </button>
+              </div>
             </div>
-
-            <div class="btn-group me-2" v-if="currentEditMode === 'addInfrastructure'">
-              <button 
-                v-for="type in infrastructureTypes" 
-                :key="type.id" 
-                class="btn btn-sm" 
-                :class="selectedInfraType === type.id ? 'btn-success' : 'btn-outline-secondary'"
-                @click="selectedInfraType = type.id"
-                :title="type.name"
+            
+            <div v-if="currentEditMode === 'addCable' && connectionInProgress && connectionInProgress.startPoint" 
+                 class="connection-active-alert">
+              <i class="fas fa-info-circle"></i> 
+              Punto de origen seleccionado: {{ getPointName(connectionInProgress.startPoint) }}. 
+              Haz clic en otro punto para crear la conexión.
+              <button @click="cancelConnection" class="btn btn-sm btn-light ms-2">Cancelar</button>
+            </div>              <l-map
+              ref="mapRef"
+              class="l-map"
+              :zoom="zoom"
+              :center="center"
+              @click="onMapClick"
+              @mousemove="onMouseMove"
+            >
+              <l-tile-layer :url="tileUrl" :attribution="attribution" />
+              <l-control-scale position="bottomleft" :imperial="false" :metric="true" />
+              
+              <!-- Marcadores de infraestructura -->
+              <l-marker 
+                v-for="point in infrastructurePoints" 
+                :key="point.id" 
+                :lat-lng="[point.latitude, point.longitude]"
+                :icon="getPointIcon(point)"
+                @click="selectInfrastructurePoint(point)"
               >
-                <i class="fas" :class="type.icon"></i>
-              </button>
-            </div>
+                <l-popup>
+                  <div class="map-popup">
+                    <h5>{{ point.name || getTypeName(point.type_id) }}</h5>
+                    <p v-if="point.description">{{ point.description }}</p>
+                    <p class="text-muted small">ID: {{ point.id.substring(0, 8) }}</p>
+                    <div class="popup-actions">
+                      <button class="btn btn-sm btn-primary" @click="startCableConnection(point)">
+                        <i class="fas fa-plus"></i> Conectar
+                      </button>
+                      <button class="btn btn-sm btn-danger" @click="deleteInfrastructurePoint(point)">
+                        <i class="fas fa-trash"></i> Eliminar
+                      </button>
+                    </div>
+                  </div>
+                </l-popup>
+              </l-marker>              <!-- Líneas de conexión de cables -->
+              <l-polyline 
+                v-for="connection in cableConnections" 
+                :key="connection.id" 
+                :lat-lngs="getConnectionLatLngs(connection)" 
+                :color="connection.color || '#3388ff'"
+                :weight="4"
+                @click="onCableClick(connection)"
+              >
+                <l-tooltip :permanent="true" :interactive="true" :direction="'center'" :className="'connection-distance-label'">
+                  <span>{{ formatDistance(connection.distance) }}</span>
+                </l-tooltip>
+              </l-polyline>              <!-- Línea temporal para la conexión en progreso -->
+              <l-polyline
+                v-if="temporaryConnectionLine"
+                :lat-lngs="temporaryConnectionLine.points"
+                :color="temporaryConnectionLine.color"
+                :weight="4"
+                :dash-array="'5, 10'"
+                class="leaflet-temp-connection"
+              >
+                <l-tooltip v-if="temporaryConnectionDistance" :permanent="true" :interactive="true" :direction="'center'" :className="'connection-distance-label connection-temp-label'">
+                  <span>{{ temporaryConnectionDistance }}</span>
+                </l-tooltip>
+              </l-polyline>
+                <!-- Zonas como polígonos -->
+              <l-polygon
+                v-if="showZones"
+                v-for="zone in zones"
+                :key="zone.id"
+                :lat-lngs="zone.polygon"
+                :color="zone.color || '#3388ff'"
+                :fill="true"
+                :fillOpacity="0.2"
+              />
+              
+              <!-- Marcador temporal cuando se está añadiendo un elemento -->
+              <l-marker v-if="tempMarker" :lat-lng="tempMarker">
+                <l-popup>
+                  <div class="map-popup">
+                    <h5>Nuevo {{ getTypeName(selectedInfraType) }}</h5>
+                    <div class="form-group mb-2">
+                      <label for="pointName" class="form-label">Nombre/Código:</label>
+                      <input v-model="newPointName" type="text" class="form-control form-control-sm" id="pointName">
+                    </div>
+                    <div class="form-group mb-3">
+                      <label for="pointDesc" class="form-label">Descripción:</label>
+                      <textarea v-model="newPointDescription" class="form-control form-control-sm" id="pointDesc"></textarea>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                      <button class="btn btn-sm btn-danger" @click="cancelAddPoint">
+                        <i class="fas fa-times"></i> Cancelar
+                      </button>
+                      <button class="btn btn-sm btn-success" @click="confirmAddPoint">
+                        <i class="fas fa-check"></i> Guardar
+                      </button>
+                    </div>
+                  </div>
+                </l-popup>
+              </l-marker>
 
-            <select class="form-select form-select-sm me-2 location-selector" 
-              @change="goToLocation($event.target.value)">
-              <option value="">-- Ir a ubicación --</option>
-              <optgroup label="Departamentos">
-                <option v-for="location in locations" :key="location.id" :value="location.id">
-                  {{ location.name }}
-                </option>
-              </optgroup>
-            </select>
+              <div v-if="currentEditMode === 'addZone'">
+  <div class="alert alert-info d-flex align-items-center mt-2">
+    <i class="fas fa-draw-polygon me-2"></i>
+    Haz clic en el mapa para agregar vértices de la zona. <span class="ms-2">Cierra la zona haciendo clic cerca del primer punto.</span>
+    <button v-if="zoneInProgress && zoneInProgress.polygon.length >= 3" class="btn btn-sm btn-success ms-3" @click="finishZone">Finalizar zona</button>
+    <button v-if="zoneInProgress && zoneInProgress.polygon.length > 0" class="btn btn-sm btn-warning ms-2" @click="undoZoneVertex"><i class="fas fa-undo"></i> Deshacer</button>
+    <button v-if="zoneInProgress" class="btn btn-sm btn-danger ms-2" @click="cancelZone">Cancelar</button>
+  </div>
+</div>
 
-            <button class="btn btn-sm btn-primary" @click="toggleFullscreen">
-              <i class="fas" :class="isFullscreen ? 'fa-compress' : 'fa-expand'"></i>
-            </button>
+<l-polygon
+  v-if="temporaryZonePolygon"
+  :lat-lngs="temporaryZonePolygon"
+  color="#3388ff"
+  :fill="true"
+  :fillOpacity="0.2"
+  dash-array="5, 10"
+/>
+<!-- Marcadores de vértices de zona -->
+<l-marker v-for="(vertex, idx) in zoneVertices" :key="'zone-vertex-' + idx" :lat-lng="vertex" :icon="smallVertexIcon">
+  <l-popup v-if="idx === 0">Primer punto (haz clic cerca para cerrar zona)</l-popup>
+</l-marker>
+            </l-map>
           </div>
         </div>
-        
-        <div v-if="currentEditMode === 'addCable' && connectionInProgress && connectionInProgress.startPoint" 
-             class="connection-active-alert">
-          <i class="fas fa-info-circle"></i> 
-          Punto de origen seleccionado: {{ getPointName(connectionInProgress.startPoint) }}. 
-          Haz clic en otro punto para crear la conexión.
-          <button @click="cancelConnection" class="btn btn-sm btn-light ms-2">Cancelar</button>
+        <div class="col-12 col-lg-3">
+          <div class="sidebar-list bg-white p-3 rounded shadow-sm mt-3 mt-lg-0">
+            <h5 class="mb-3"><i class="fas fa-list"></i> Infraestructura</h5>
+            <div class="mb-2">
+              <label for="zoneFilter" class="form-label">Filtrar por zona:</label>
+              <select id="zoneFilter" v-model="selectedZoneId" class="form-select form-select-sm">
+                <option value="">Todas las zonas</option>
+                <option v-for="zone in zones" :key="zone.id" :value="zone.id">{{ zone.name || ('Zona ' + zone.id.substring(0,6)) }}</option>
+              </select>
+            </div>
+            <div v-for="type in infrastructureTypes" :key="type.id" class="mb-3">
+              <h6 class="text-primary"><i :class="'fas ' + type.icon"></i> {{ type.name }}</h6>
+              <ul class="list-group list-group-flush">
+                <li v-for="point in filteredPointsByType(type.id)" :key="point.id" class="list-group-item d-flex justify-content-between align-items-center">
+                  <span>{{ point.name || (type.name + ' ' + point.id.substring(0,6)) }}</span>
+                  <button class="btn btn-sm btn-outline-primary" @click="flyToPoint(point)"><i class="fas fa-location-arrow"></i></button>
+                </li>
+                <li v-if="filteredPointsByType(type.id).length === 0" class="list-group-item text-muted small">Sin elementos</li>
+              </ul>
+            </div>
+          </div>
         </div>
-          <l-map
-          ref="mapRef"
-          class="l-map"
-          :zoom="zoom"
-          :center="center"
-          @click="onMapClick"
-          @mousemove="onMouseMove"
-        >
-          <l-tile-layer :url="tileUrl" :attribution="attribution" />
-          <l-control-scale position="bottomleft" :imperial="false" :metric="true" />
-          
-          <!-- Marcadores de infraestructura -->
-          <l-marker 
-            v-for="point in infrastructurePoints" 
-            :key="point.id" 
-            :lat-lng="[point.latitude, point.longitude]"
-            :icon="getPointIcon(point)"
-            @click="selectInfrastructurePoint(point)"
-          >
-            <l-popup>
-              <div class="map-popup">
-                <h5>{{ point.name || getTypeName(point.type_id) }}</h5>
-                <p v-if="point.description">{{ point.description }}</p>
-                <p class="text-muted small">ID: {{ point.id.substring(0, 8) }}</p>
-                <div class="popup-actions">
-                  <button class="btn btn-sm btn-primary" @click="startCableConnection(point)">
-                    <i class="fas fa-plus"></i> Conectar
-                  </button>
-                  <button class="btn btn-sm btn-danger" @click="deleteInfrastructurePoint(point)">
-                    <i class="fas fa-trash"></i> Eliminar
-                  </button>
-                </div>
-              </div>
-            </l-popup>
-          </l-marker>          <!-- Líneas de conexión de cables -->
-          <l-polyline 
-            v-for="connection in cableConnections" 
-            :key="connection.id" 
-            :lat-lngs="getConnectionLatLngs(connection)" 
-            :color="connection.color || '#3388ff'"
-            :weight="4"
-            @click="onCableClick(connection)"
-          />
-            <!-- Línea temporal para la conexión en progreso -->
-          <l-polyline
-            v-if="temporaryConnectionLine"
-            :lat-lngs="[temporaryConnectionLine.startPoint, temporaryConnectionLine.startPoint]"
-            :color="temporaryConnectionLine.color"
-            :weight="4"
-            :dash-array="'5, 10'"
-            class="leaflet-temp-connection"
-          />
-          
-          <!-- Zonas como polígonos -->
-          <l-polygon
-            v-for="zone in zones"
-            :key="zone.id"
-            :lat-lngs="zone.polygon"
-            :color="zone.color || '#3388ff'"
-            :fill="true"
-            :fillOpacity="0.2"
-          />
-          
-          <!-- Marcador temporal cuando se está añadiendo un elemento -->
-          <l-marker v-if="tempMarker" :lat-lng="tempMarker">
-            <l-popup>
-              <div class="map-popup">
-                <h5>Nuevo {{ getTypeName(selectedInfraType) }}</h5>
-                <div class="form-group mb-2">
-                  <label for="pointName" class="form-label">Nombre/Código:</label>
-                  <input v-model="newPointName" type="text" class="form-control form-control-sm" id="pointName">
-                </div>
-                <div class="form-group mb-3">
-                  <label for="pointDesc" class="form-label">Descripción:</label>
-                  <textarea v-model="newPointDescription" class="form-control form-control-sm" id="pointDesc"></textarea>
-                </div>
-                <div class="d-flex justify-content-between">
-                  <button class="btn btn-sm btn-danger" @click="cancelAddPoint">
-                    <i class="fas fa-times"></i> Cancelar
-                  </button>
-                  <button class="btn btn-sm btn-success" @click="confirmAddPoint">
-                    <i class="fas fa-check"></i> Guardar
-                  </button>
-                </div>
-              </div>
-            </l-popup>
-          </l-marker>
-        </l-map>
       </div>
       
       <!-- Modal para confirmar conexiones -->
@@ -164,11 +225,10 @@
               <div class="form-group mb-3">
                 <label for="cableColor">Color (para visualización):</label>
                 <input type="color" id="cableColor" v-model="newConnection.color" class="form-control form-control-sm">
-              </div>
-              <p>
+              </div>              <p>
                 <strong>Origen:</strong> {{ getPointName(connectionInProgress.startPoint) }}<br>
                 <strong>Destino:</strong> {{ getPointName(connectionInProgress.endPoint) }}<br>
-                <strong>Distancia:</strong> {{ calculateDistance(connectionInProgress.startPoint, connectionInProgress.endPoint).toFixed(2) }} metros
+                <strong>Distancia:</strong> {{ formatDistance(calculateDistance(connectionInProgress.startPoint, connectionInProgress.endPoint)) }}
               </p>
             </div>
             <div class="modal-footer">
@@ -184,13 +244,14 @@
 
 <script setup>
 import { ref, inject, onMounted, onUnmounted, computed } from 'vue';
-import { LMap, LTileLayer, LMarker, LPopup, LControlScale, LPolyline, LPolygon } from '@vue-leaflet/vue-leaflet';
+import { LMap, LTileLayer, LMarker, LPopup, LControlScale, LPolyline, LPolygon, LTooltip } from '@vue-leaflet/vue-leaflet';
 import MainMenu from './MainMenu.vue';
 import SetupHelp from './SetupHelp.vue';
 import { supabase } from '../supabase';
 import { v4 as uuidv4 } from 'uuid'; // Necesitarás instalar: npm install uuid
 import '../assets/connection-alert.css';
 import Swal from 'sweetalert2';
+import * as bootstrap from 'bootstrap';
 
 // Referencias y estado básico del mapa
 const mapRef = ref(null);
@@ -234,19 +295,70 @@ const newConnection = ref({
   color: '#3388ff'
 });
 
+// Estado para la visibilidad de las zonas
+const showZones = ref(true); // Por defecto, las zonas están visibles
+
+// Estado para el modo oscuro del mapa
+const isDarkMode = ref(false);
+const darkTileUrl = 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png';
+const lightTileUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+const tileUrl = computed(() => isDarkMode.value ? darkTileUrl : lightTileUrl);
+
+// Estado para la posición del mouse en modo conexión
+const mouseLatLng = ref(null);
+
+// Propiedad computada para la distancia de la conexión temporal
+const temporaryConnectionDistance = computed(() => {
+  if (connectionInProgress.value?.startPoint && mouseLatLng.value) {
+    // Crear un objeto con la estructura necesaria para calculateDistance
+    const tempPoint = {
+      latitude: mouseLatLng.value.lat,
+      longitude: mouseLatLng.value.lng
+    };
+    
+    // Calcular la distancia
+    const distance = calculateDistance(connectionInProgress.value.startPoint, tempPoint);
+    
+    // Formatear la distancia
+    return formatDistance(distance);
+  }
+  return null;
+});
+
 // Computed property para la línea temporal de conexión
 const temporaryConnectionLine = computed(() => {
-  if (connectionInProgress.value?.startPoint && currentEditMode.value === 'addCable') {
+  if (connectionInProgress.value?.startPoint && currentEditMode.value === 'addCable' && mouseLatLng.value) {
     return {
-      startPoint: [
-        connectionInProgress.value.startPoint.latitude,
-        connectionInProgress.value.startPoint.longitude
+      points: [
+        [connectionInProgress.value.startPoint.latitude, connectionInProgress.value.startPoint.longitude],
+        [mouseLatLng.value.lat, mouseLatLng.value.lng]
       ],
       color: newConnection.value.color || '#3388ff'
     };
   }
   return null;
 });
+
+// Estado para creación de zonas
+const zoneInProgress = ref(null); // { polygon: [[lat, lng], ...] }
+const newZoneName = ref("");
+const ZONE_CLOSE_DISTANCE = 0.0005; // ~50m, ajustable
+
+// Computed para el polígono temporal
+const temporaryZonePolygon = computed(() => {
+  if (currentEditMode.value === 'addZone' && zoneInProgress.value && zoneInProgress.value.polygon.length > 1) {
+    // Para visualizar un polígono cerrado, añadimos el primer punto también al final
+    const vertices = [...zoneInProgress.value.polygon];
+    // Si hay suficientes puntos (más de 2), cerramos el polígono para visualización
+    if (vertices.length > 2) {
+      return [...vertices, vertices[0]]; // Añadimos el primer punto al final
+    }
+    return vertices;
+  }
+  return null;
+});
+
+const zoneVertices = computed(() => zoneInProgress.value ? zoneInProgress.value.polygon : []);
 
 // Datos cargados desde la base de datos
 const infrastructureTypes = ref([
@@ -260,7 +372,6 @@ const cableConnections = ref([]);
 const zones = ref([]);
 
 // Configuración del mapa
-const tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 const attribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
 // Modos de edición disponibles
@@ -277,12 +388,13 @@ function setEditMode(mode) {
   // Reiniciar estados temporales cuando cambia el modo
   tempMarker.value = null;
   connectionInProgress.value = null;
+  zoneInProgress.value = null;
 }
 
 // Función para cancelar una conexión en progreso
 function cancelConnection() {
   connectionInProgress.value = null;
-  // Opcionalmente, cambiar al modo vista
+  mouseLatLng.value = null;
   currentEditMode.value = 'view';
 }
 
@@ -303,29 +415,35 @@ function onMapClick(e) {
         markers[markers.length - 1].click();
       }
     }, 100);
+  } else if (currentEditMode.value === 'addCable') {
+    mouseLatLng.value = e.latlng;
+  } else if (currentEditMode.value === 'addZone') {
+    if (!zoneInProgress.value) {
+      // Iniciar la zona con el primer vértice
+      zoneInProgress.value = { polygon: [ [e.latlng.lat, e.latlng.lng] ] };
+    } else {
+      const polygon = zoneInProgress.value.polygon;
+      // Si hay al menos 3 vértices y el clic es cerca del primero, cerrar zona
+      const first = polygon[0];
+      const distToFirst = Math.sqrt(Math.pow(e.latlng.lat - first[0], 2) + Math.pow(e.latlng.lng - first[1], 2));
+      if (polygon.length >= 3 && distToFirst < ZONE_CLOSE_DISTANCE) {
+        finishZone();
+        return;
+      }
+      // Evitar puntos muy cercanos al anterior
+      const last = polygon[polygon.length - 1];
+      const distToLast = Math.sqrt(Math.pow(e.latlng.lat - last[0], 2) + Math.pow(e.latlng.lng - last[1], 2));
+      if (distToLast < ZONE_CLOSE_DISTANCE / 2) return;
+      // Agregar nuevo vértice
+      polygon.push([e.latlng.lat, e.latlng.lng]);
+    }
   }
 }
 
-// Función para manejar el movimiento del mouse en el mapa
-function onMouseMove(e) {
-  // Si estamos en modo de conexión y tenemos un punto de origen
-  if (currentEditMode.value === 'addCable' && connectionInProgress.value?.startPoint) {
-    // Actualizar la posición final de la línea temporal con la posición del mouse
-    if (temporaryConnectionLine.value) {
-      // Asegurarnos de que la polyline tenga 2 puntos (origen y posición actual del mouse)
-      const startPoint = [
-        connectionInProgress.value.startPoint.latitude,
-        connectionInProgress.value.startPoint.longitude
-      ];
-      const mousePoint = [e.latlng.lat, e.latlng.lng];
-      
-      // Actualizar la polyline
-      const polyline = document.querySelector('.leaflet-temp-connection');
-      if (polyline && polyline._latlngs) {
-        polyline._latlngs = [startPoint, mousePoint];
-        polyline.redraw();
-      }
-    }
+function undoZoneVertex() {
+  if (zoneInProgress.value && zoneInProgress.value.polygon.length > 0) {
+    zoneInProgress.value.polygon.pop();
+    if (zoneInProgress.value.polygon.length === 0) zoneInProgress.value = null;
   }
 }
 
@@ -405,7 +523,7 @@ async function confirmAddPoint() {
       // Si se guardó correctamente, añadir a la lista local
       infrastructurePoints.value.push(newPoint);
       console.log('Punto guardado correctamente en BD y añadido localmente');
-      alert('Punto guardado correctamente en la base de datos.');
+      Swal.fire({ icon: 'success', title: '¡Guardado!', text: 'Punto guardado correctamente en la base de datos.', confirmButtonColor: '#3085d6', timer: 2000, timerProgressBar: true });
     }
     
     // Reset en cualquier caso
@@ -432,10 +550,10 @@ async function confirmAddPoint() {
       
       infrastructurePoints.value.push(newPoint);
       console.log('Punto añadido solo localmente debido a error:', error);
-      alert('El punto se muestra localmente, pero no se ha guardado en la base de datos.');
+      Swal.fire({ icon: 'warning', title: 'Solo local', text: 'El punto se muestra localmente, pero no se ha guardado en la base de datos.', confirmButtonColor: '#f59e42', timer: 2500, timerProgressBar: true });
     } catch (localError) {
       console.error('No se pudo crear ni siquiera localmente:', localError);
-      alert('Error crítico: No se pudo agregar el punto ni siquiera localmente.');
+      Swal.fire({ icon: 'error', title: 'Error crítico', text: 'No se pudo agregar el punto ni siquiera localmente.', confirmButtonColor: '#d33' });
     }
     
     // Reset
@@ -468,15 +586,13 @@ function startCableConnection(point) {
 // Función para guardar la conexión
 async function saveConnection() {
   if (!connectionInProgress.value?.startPoint || !connectionInProgress.value?.endPoint) {
-    alert('Error: No se han seleccionado los puntos de origen y destino.');
+    Swal.fire({ icon: 'error', title: 'Error', text: 'No se han seleccionado los puntos de origen y destino.', confirmButtonColor: '#d33' });
     return;
   }
-  
   if (!user.value) {
-    alert('Error: No hay un usuario autenticado.');
+    Swal.fire({ icon: 'error', title: 'Error', text: 'No hay un usuario autenticado.', confirmButtonColor: '#d33' });
     return;
   }
-  
   try {
     const newConn = {
       id: uuidv4(),
@@ -492,55 +608,50 @@ async function saveConnection() {
       created_by: user.value.id,
       properties: {}
     };
-    
     console.log('Intentando guardar conexión:', newConn);
-    
-    try {
-      const { data, error } = await supabase
-        .from('cable_connections')
-        .insert(newConn);
-        
-      if (error) {
-        console.warn('Error al insertar conexión en BD:', error);
-        
-        // Verificar el tipo de error
-        if (error.code === '42P01') { // Tabla no existe
-          alert('Error: La tabla cable_connections no existe en la base de datos. Por favor, ejecuta el script SQL para crear las tablas.');
-        } else {
-          alert(`Error al guardar en la base de datos: ${error.message}`);
-        }
-        
-        // Añadir conexión solo a la lista local para demostración
-        cableConnections.value.push(newConn);
-        console.log('Conexión añadida localmente (no en BD)');
-        alert('La conexión se muestra localmente, pero no se ha guardado en la base de datos.');
-      } else {
-        // Añadir conexión a la lista local si se guardó correctamente
-        cableConnections.value.push(newConn);
-        console.log('Conexión guardada correctamente en BD y añadida localmente');
-        alert('Conexión guardada correctamente en la base de datos.');
-      }
-    } catch (dbError) {
-      console.warn('Error de base de datos:', dbError);
-      // Añadir conexión solo a la lista local para demostración
+    // Validar que los puntos no sean el mismo
+    // Mostrar loading
+    Swal.fire({
+      title: 'Guardando conexión...',
+      text: 'Por favor espera',
+      allowOutsideClick: false,
+      didOpen: () => { Swal.showLoading(); }
+    });
+    const { data, error } = await supabase
+      .from('cable_connections')
+      .insert(newConn);
+    Swal.close();
+    if (error) {
+      console.warn('Error al insertar conexión en BD:', error);
+      Swal.fire({
+        icon: 'error',
+        title: 'Error al guardar en Supabase',
+        text: error.message || JSON.stringify(error),
+        confirmButtonColor: '#d33'
+      });
       cableConnections.value.push(newConn);
-      alert('La conexión se muestra localmente, pero no se ha guardado en la base de datos.');
+      return;
     }
-    
+    cableConnections.value.push(newConn);
+    Swal.fire({
+      icon: 'success',
+      title: '¡Guardado!',
+      text: 'Conexión guardada correctamente en la base de datos.',
+      confirmButtonColor: '#3085d6',
+      timer: 2000,
+      timerProgressBar: true
+    });
     // Reset
     connectionInProgress.value = null;
     newConnection.value = { cableType: 'fiber', color: '#3388ff' };
-    
-    // Cambiar al modo de visualización
+    mouseLatLng.value = null;
     currentEditMode.value = 'view';
-    
-    // Cerrar el modal
     const modal = bootstrap.Modal.getInstance(document.getElementById('connectionModal'));
     if (modal) modal.hide();
-    
   } catch (error) {
+    Swal.close();
     console.error('Error al guardar la conexión:', error);
-    alert('Error al guardar la conexión. Por favor, crea las tablas en Supabase primero.');
+    Swal.fire({ icon: 'error', title: 'Error', text: error.message || 'Error al guardar la conexión. Por favor, revisa la consola.', confirmButtonColor: '#d33' });
   }
 }
 
@@ -561,18 +672,93 @@ function getConnectionLatLngs(connection) {
 
 // Función para calcular la distancia entre dos puntos (Haversine)
 function calculateDistance(point1, point2) {
+  if (!point1 || !point2 || point1.latitude == null || point1.longitude == null || point2.latitude == null || point2.longitude == null) {
+    return 0;
+  }
   const R = 6371000; // Radio de la Tierra en metros
   const lat1 = point1.latitude * Math.PI / 180;
   const lat2 = point2.latitude * Math.PI / 180;
   const deltaLat = (point2.latitude - point1.latitude) * Math.PI / 180;
   const deltaLon = (point2.longitude - point1.longitude) * Math.PI / 180;
-  
   const a = Math.sin(deltaLat/2) * Math.sin(deltaLat/2) +
             Math.cos(lat1) * Math.cos(lat2) *
             Math.sin(deltaLon/2) * Math.sin(deltaLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));  return R * c; // Distancia en metros
+}
+
+// Función para formatear la distancia en un formato legible
+function formatDistance(distance) {
+  if (distance === undefined || distance === null) {
+    return 'N/A';
+  }
   
-  return R * c; // Distancia en metros
+  // Si la distancia es menor a 1000 metros, mostrar en metros
+  if (distance < 1000) {
+    return `${Math.round(distance)} m`;
+  } 
+  // Si es mayor o igual a 1000 metros, mostrar en kilómetros con 2 decimales
+  else {
+    return `${(distance / 1000).toFixed(2)} km`;
+  }
+}
+
+// Función para eliminar una conexión
+async function deleteConnection(connection) {
+  try {
+    Swal.fire({
+      title: '¿Estás seguro?',
+      text: 'Esta acción no se puede deshacer',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Sí, eliminar',
+      cancelButtonText: 'Cancelar'
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        // Eliminar de la base de datos
+        const { error } = await supabase
+          .from('cable_connections')
+          .delete()
+          .eq('id', connection.id);
+        
+        if (error) {
+          throw error;
+        }
+        
+        // Eliminar del estado local
+        cableConnections.value = cableConnections.value.filter(c => c.id !== connection.id);
+        
+        Swal.fire({
+          icon: 'success',
+          title: '¡Eliminado!',
+          text: 'La conexión ha sido eliminada.',
+          confirmButtonColor: '#3085d6',
+          timer: 2000,
+          timerProgressBar: true
+        });
+      }
+    });
+  } catch (error) {
+    console.error('Error al eliminar la conexión:', error);
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: 'No se pudo eliminar la conexión. Inténtalo de nuevo.',
+      confirmButtonColor: '#d33'
+    });
+  }
+}
+
+// Función para obtener el nombre legible del tipo de cable
+function getCableTypeName(cableType) {
+  const types = {
+    'fiber': 'Fibra Óptica',
+    'coaxial': 'Coaxial',
+    'twisted': 'Par Trenzado'
+  };
+  
+  return types[cableType] || cableType || 'Desconocido';
 }
 
 // Funciones de utilidad para nombres e íconos
@@ -601,7 +787,8 @@ function getPointIcon(point) {
 }
 
 function getPointName(point) {
-  return point.name || `${getTypeName(point.type_id)} ${point.id.substring(0, 6)}`;
+  if (!point) return 'Punto desconocido';
+  return point.name || `${getTypeName(point.type_id)} ${point.id ? point.id.substring(0, 6) : ''}`;
 }
 
 // Eliminar un punto de infraestructura
@@ -635,14 +822,55 @@ async function deleteInfrastructurePoint(point) {
     
   } catch (error) {
     console.error('Error al eliminar el punto:', error);
-    alert('Error al eliminar el punto. Intenta nuevamente.');
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: 'Error al eliminar el punto. Intenta nuevamente.',
+      confirmButtonColor: '#d33'
+    });
   }
 }
 
 // Manejar clic en cable
 function onCableClick(connection) {
-  // Implementar lógica para mostrar información del cable
   console.log('Cable seleccionado:', connection);
+  // Obtener los puntos de inicio y fin
+  const startPoint = infrastructurePoints.value.find(p => p.id === connection.start_point_id);
+  const endPoint = infrastructurePoints.value.find(p => p.id === connection.end_point_id);
+  
+  if (!startPoint || !endPoint) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: 'No se pudieron encontrar los puntos de esta conexión',
+      confirmButtonColor: '#d33'
+    });
+    return;
+  }
+  
+  // Mostrar información detallada
+  Swal.fire({
+    title: 'Detalles de la conexión',
+    html: `
+      <div class="connection-details">
+        <p><strong>Tipo de cable:</strong> ${getCableTypeName(connection.cable_type)}</p>
+        <p><strong>Origen:</strong> ${getPointName(startPoint)}</p>
+        <p><strong>Destino:</strong> ${getPointName(endPoint)}</p>
+        <p><strong>Distancia:</strong> ${formatDistance(connection.distance)}</p>
+        <p><strong>ID:</strong> <span class="text-muted small">${connection.id.substring(0, 8)}</span></p>
+      </div>
+    `,
+    confirmButtonText: 'Cerrar',
+    confirmButtonColor: '#3085d6',
+    showCancelButton: true,
+    cancelButtonText: 'Eliminar',
+    cancelButtonColor: '#d33'
+  }).then((result) => {
+    if (result.dismiss === Swal.DismissReason.cancel) {
+      // Si el usuario hizo clic en "Eliminar"
+      deleteConnection(connection);
+    }
+  });
 }
 
 // Seleccionar un punto de infraestructura
@@ -651,8 +879,7 @@ function selectInfrastructurePoint(point) {
   if (currentEditMode.value === 'addCable') {    // Si no hay conexión en progreso, iniciar una nueva
     if (!connectionInProgress.value) {
       connectionInProgress.value = { startPoint: point };
-      console.log('Conexión iniciada desde punto:', point.id);
-      
+      mouseLatLng.value = null;
       Swal.fire({
         title: '¡Punto de origen seleccionado!',
         text: 'Ahora selecciona el punto destino para crear la conexión.',
@@ -666,9 +893,7 @@ function selectInfrastructurePoint(point) {
     // Si ya hay un punto inicial y seleccionamos uno diferente como destino
     else if (connectionInProgress.value.startPoint.id !== point.id) {
       connectionInProgress.value.endPoint = point;
-      console.log('Conexión completada con punto destino:', point.id);
-      
-      // Mostrar modal para confirmar conexión
+      mouseLatLng.value = null;
       const modal = new bootstrap.Modal(document.getElementById('connectionModal'));
       modal.show();
     }
@@ -773,7 +998,12 @@ async function loadMapData() {
       }
     } catch (loadError) {
       console.warn('Error al verificar las tablas:', loadError);
-      alert('Es necesario crear las tablas en Supabase. Por favor, sigue las instrucciones.');
+      Swal.fire({
+        icon: 'warning',
+        title: 'Tablas no encontradas',
+        text: 'Es necesario crear las tablas en Supabase. Por favor, sigue las instrucciones.',
+        confirmButtonColor: '#d33'
+      });
     }
     
   } catch (error) {
@@ -782,24 +1012,160 @@ async function loadMapData() {
   }
 }
 
-onMounted(() => {
-  // Cargar datos
-  loadMapData();
-  
-  // Listeners de pantalla completa
-  document.addEventListener('fullscreenchange', handleFullscreenChange);
-  document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-  document.addEventListener('mozfullscreenchange', handleFullscreenChange);
-  document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+const selectedZoneId = ref("");
+
+function filteredPointsByType(typeId) {
+  return infrastructurePoints.value.filter(p => {
+    const matchesType = p.type_id === typeId;
+    if (!selectedZoneId.value) return matchesType;
+    // Buscar si el punto está dentro de la zona seleccionada (por id de zona en el punto o por polígono)
+    // Si los puntos tienen zona_id:
+    if (p.zone_id) return matchesType && p.zone_id === selectedZoneId.value;
+    // Si no, buscar si está dentro del polígono de la zona
+    const zone = zones.value.find(z => z.id === selectedZoneId.value);
+    if (!zone || !zone.polygon) return false;
+    // Simple point-in-polygon (solo si hay polígono)
+    return matchesType && isPointInPolygon([p.latitude, p.longitude], zone.polygon);
+  });
+}
+
+function isPointInPolygon(point, polygon) {
+  // Ray-casting algorithm for point-in-polygon
+  let x = point[1], y = point[0];
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    let xi = polygon[i][1], yi = polygon[i][0];
+    let xj = polygon[j][1], yj = polygon[j][0];
+    let intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi + 0.0000001) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function flyToPoint(point) {
+  if (mapRef.value && mapRef.value.leafletObject) {
+    mapRef.value.leafletObject.flyTo([point.latitude, point.longitude], 17, { duration: 1 });
+  }
+}
+
+// Función para finalizar y guardar la zona
+async function finishZone() {
+  if (!zoneInProgress.value || zoneInProgress.value.polygon.length < 3) {
+    Swal.fire({ icon: 'warning', title: 'Zona incompleta', text: 'Debes seleccionar al menos 3 puntos.', confirmButtonColor: '#d33' });
+    return;
+  }
+  // Mostrar modal para nombre
+  Swal.fire({
+    title: 'Nombre de la zona',
+    input: 'text',
+    inputLabel: 'Nombre',
+    inputValue: '',
+    showCancelButton: true,
+    confirmButtonText: 'Guardar',
+    cancelButtonText: 'Cancelar',
+    preConfirm: (value) => {
+      if (!value) {
+        Swal.showValidationMessage('El nombre es obligatorio');
+      }
+      return value;
+    }
+  }).then(async (result) => {
+    if (result.isConfirmed) {
+      const zone = {
+        id: uuidv4(),
+        name: result.value,
+        polygon: zoneInProgress.value.polygon,
+        color: '#3388ff',
+        created_at: new Date()
+        // Eliminamos properties ya que no existe en la tabla
+      };
+      // Guardar en Supabase
+      const { error } = await supabase.from('zones').insert([zone]);
+      if (error) {
+        Swal.fire({ icon: 'error', title: 'Error', text: error.message, confirmButtonColor: '#d33' });
+      } else {
+        zones.value.push(zone);
+        Swal.fire({ icon: 'success', title: 'Zona guardada', text: 'Zona creada correctamente.', confirmButtonColor: '#3085d6', timer: 2000, timerProgressBar: true });
+      }
+      zoneInProgress.value = null;
+    }
+  });
+}
+
+// Función para cancelar la creación de zona
+function cancelZone() {
+  zoneInProgress.value = null;
+}
+
+// Crear el observer para el modo oscuro
+const darkModeObserver = new MutationObserver((mutations) => {
+  mutations.forEach((mutation) => {
+    if (mutation.attributeName === 'class') {
+      isDarkMode.value = document.body.classList.contains('dark-mode');
+    }
+  });
 });
 
-onUnmounted(() => {
-  // Remover listeners de pantalla completa
-  document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
-  document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
-  document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+// Cargar datos al montar el componente
+onMounted(() => {
+  document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+  
+  // Detectar si el modo oscuro está activado al iniciar
+  isDarkMode.value = document.body.classList.contains('dark-mode');
+  console.log('Modo oscuro al iniciar:', isDarkMode.value);
+  
+  // Escuchar cambios en el modo oscuro
+  darkModeObserver.observe(document.body, { attributes: true });
+  
+  // Cargar datos del mapa
+  loadMapData();
 });
+
+// Limpiar listeners cuando se desmonte el componente
+onUnmounted(() => {
+  document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+  darkModeObserver.disconnect();
+});
+
+// Función para alternar la visibilidad de las zonas
+function toggleZones() {
+  showZones.value = !showZones.value;
+}
+
+// Función para alternar modo oscuro directamente desde el mapa
+function toggleDarkMode() {
+  // Invertir el estado actual
+  isDarkMode.value = !isDarkMode.value;
+  
+  // Emitir evento para cambiar el estado global del modo oscuro
+  const event = new CustomEvent('toggle-dark-mode');
+  document.dispatchEvent(event);
+  
+  console.log('Modo oscuro cambiado desde mapa a:', isDarkMode.value);
+}
+
+const smallVertexIcon = computed(() => {
+  return window.L ? window.L.divIcon({
+    html: `<div style="
+      width: 10px; 
+      height: 10px; 
+      background-color: ${isDarkMode.value ? '#60a5fa' : '#3b82f6'}; 
+      border: 2px solid ${isDarkMode.value ? '#0f172a' : 'white'};
+      border-radius: 50%;"></div>`,
+    className: 'vertex-marker',
+    iconSize: [10, 10],
+    iconAnchor: [5, 5]
+  }) : null;
+});
+
+
+// Manejador para el movimiento del mouse en el mapa
+function onMouseMove(e) {
+  if (currentEditMode.value === 'addCable' && connectionInProgress.value?.startPoint) {
+    mouseLatLng.value = e.latlng;
+  }
+}
+
 </script>
 
 <style scoped>
@@ -824,6 +1190,7 @@ onUnmounted(() => {
   background: white;
   border-bottom: 1px solid rgba(0,0,0,0.1);
   z-index: 10;
+  transition: background-color 0.3s, border-color 0.3s;
 }
 
 .map-header h4 {
@@ -856,6 +1223,7 @@ onUnmounted(() => {
   padding: 12px;
   font-size: 14px;
   min-width: 200px;
+  transition: background-color 0.3s, color 0.3s;
 }
 
 .map-popup h5 {
@@ -1005,5 +1373,79 @@ onUnmounted(() => {
 
 :global(body.dark-mode .map-popup h5) {
   color: #60a5fa;
+}
+
+.sidebar-list {
+  min-height: 400px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+:deep(.leaflet-container) {
+  transition: filter 0.5s ease;
+}
+
+/* Estilos específicos para el componente MapView */
+.map-header {
+  transition: background-color 0.3s, border-color 0.3s;
+}
+
+:deep(.map-popup) {
+  transition: background-color 0.3s, color 0.3s;
+}
+
+:deep(body.dark-mode .leaflet-marker-icon) {
+  filter: brightness(1.2) contrast(1.2);
+}
+
+:deep(body.dark-mode .connection-distance-label) {
+  background-color: rgba(15, 23, 42, 0.75) !important;
+  color: #f8fafc !important;
+  border: 1px solid #334155 !important;
+}
+
+:deep(body.dark-mode .connection-temp-label) {
+  background-color: rgba(37, 99, 235, 0.5) !important;
+  border: 1px solid #60a5fa !important;
+}
+
+:deep(body.dark-mode .sidebar-list) {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+}
+
+:deep(body.dark-mode .list-group-item) {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+
+:deep(body.dark-mode .location-selector) {
+  background-color: #334155 !important;
+  color: #f8fafc !important;
+  border-color: #475569 !important;
+}
+
+/* Transición suave entre modos */
+:deep(.l-map), .map-container, .sidebar-list, .list-group-item {
+  transition: background-color 0.3s, color 0.3s, border-color 0.3s, box-shadow 0.3s;
+}
+
+/* Botones de control con mejor contraste en modo oscuro */
+:deep(body.dark-mode .btn-outline-secondary) {
+  color: #cbd5e1 !important;
+  border-color: #475569 !important;
+}
+
+:deep(body.dark-mode .btn-outline-secondary:hover) {
+  background-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+:deep(body.dark-mode .connection-active-alert) {
+  background-color: #1e3a8a !important;
+  color: #bfdbfe !important;
+  border-color: #3b82f6 !important;
 }
 </style>
