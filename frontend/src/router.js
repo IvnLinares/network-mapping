@@ -8,6 +8,7 @@ const routes = [
   { path: '/', name: 'auth', component: Auth },
   { path: '/dashboard', name: 'dashboard', component: Dashboard, meta: { requiresAuth: true, roles: ['admin', 'tecnico', 'asistente'] } },
   { path: '/usuarios', name: 'users', component: UserManagement, meta: { requiresAuth: true, roles: ['admin'] } },
+  { path: '/mapa', name: 'mapa', component: () => import('./components/MapView.vue'), meta: { requiresAuth: true, roles: ['admin', 'tecnico', 'asistente'] } },
   // Puedes agregar más rutas y definir los roles permitidos en meta.roles
 ];
 

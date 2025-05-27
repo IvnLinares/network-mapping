@@ -1,0 +1,8 @@
+{
+  "tasks": {
+    "deploy": "supabase functions deploy get-auth-users"
+  },
+  "compilerOptions": {
+    "lib": ["deno.ns"]
+  }
+}

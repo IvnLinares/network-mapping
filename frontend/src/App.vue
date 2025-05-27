@@ -58,8 +58,7 @@ provide('userRole', userRole);
 <template>
   <router-view />
   <button 
-    class="btn btn-dark rounded-circle position-fixed d-flex align-items-center justify-content-center"
-    style="width: 56px; height: 56px; bottom: 32px; right: 32px; z-index: 2000; box-shadow: 0 2px 8px rgba(0,0,0,0.18); font-size: 1.5rem;"
+    class="btn theme-toggle-btn rounded-circle position-fixed d-flex align-items-center justify-content-center"
     @click="toggleDarkMode"
     aria-label="Alternar modo oscuro"
   >
@@ -69,5 +68,34 @@ provide('userRole', userRole);
 </template>
 
 <style scoped>
-/* ...existing code... */
+.theme-toggle-btn {
+  width: 56px;
+  height: 56px;
+  bottom: 32px;
+  right: 32px;
+  z-index: 2000;
+  box-shadow: 0 3px 15px rgba(0,0,0,0.25);
+  font-size: 1.5rem;
+  background: linear-gradient(145deg, #3b82f6, #2563eb);
+  color: white;
+  transition: all 0.3s ease;
+  border: none;
+}
+
+.theme-toggle-btn:hover {
+  transform: scale(1.1) translateY(-2px);
+  background: linear-gradient(145deg, #2563eb, #1d4ed8);
+  box-shadow: 0 5px 20px rgba(37, 99, 235, 0.5);
+}
+
+:global(body.dark-mode) .theme-toggle-btn {
+  background: linear-gradient(145deg, #f59e0b, #d97706);
+  color: #0f172a;
+  box-shadow: 0 3px 15px rgba(0,0,0,0.3);
+}
+
+:global(body.dark-mode) .theme-toggle-btn:hover {
+  background: linear-gradient(145deg, #fbbf24, #f59e0b);
+  box-shadow: 0 5px 20px rgba(245, 158, 11, 0.3);
+}
 </style>
