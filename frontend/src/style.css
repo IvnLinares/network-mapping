@@ -1,0 +1,250 @@
+:root {
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: light dark;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #242424;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  font-weight: 500;
+  color: #646cff;
+  text-decoration: inherit;
+}
+a:hover {
+  color: #535bf2;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  place-items: center;
+  min-width: 320px;
+  min-height: 100vh;
+  background: #f4f6fa;
+  font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
+  color: #222;
+}
+
+h1 {
+  font-size: 3.2em;
+  line-height: 1.1;
+}
+
+button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: #1a1a1a;
+  cursor: pointer;
+  transition: border-color 0.25s;
+}
+button:hover {
+  border-color: #646cff;
+}
+button:focus,
+button:focus-visible {
+  outline: 4px auto -webkit-focus-ring-color;
+}
+
+.card {
+  padding: 2em;
+  border-radius: 12px;
+  border: none;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  background: #fff;
+}
+
+.table {
+  background: #fff;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.table th {
+  background: #f4f6fa;
+  font-weight: 600;
+  color: #333;
+}
+.table td, .table th {
+  vertical-align: middle;
+}
+
+.btn-primary {
+  background: #2563eb;
+  border: none;
+  border-radius: 6px;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+.btn-primary:hover {
+  background: #1d4ed8;
+}
+.btn-warning {
+  background: #f59e42;
+  border: none;
+  color: #fff;
+  border-radius: 6px;
+}
+.btn-danger {
+  background: #ef4444;
+  border: none;
+  color: #fff;
+  border-radius: 6px;
+}
+.btn-secondary {
+  background: #64748b;
+  border: none;
+  color: #fff;
+  border-radius: 6px;
+}
+
+input.form-control, select.form-select {
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  color: #222;
+}
+input.form-control:focus, select.form-select:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px #2563eb22;
+}
+
+h3, h5 {
+  color: #2563eb;
+  font-weight: 700;
+}
+
+.modal-content {
+  border-radius: 12px;
+}
+
+.navbar {
+  background: #fff !important;
+  border-bottom: 1px solid #e5e7eb;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+}
+
+#app {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+@media (max-width: 767px) {
+  .container {
+    padding: 0 0.5rem;
+  }
+  .card {
+    padding: 1rem !important;
+  }
+  .table-responsive {
+    font-size: 0.95rem;
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color: #213547;
+    background-color: #ffffff;
+  }
+  a:hover {
+    color: #747bff;
+  }
+  button {
+    background-color: #f9f9f9;
+  }
+}
+
+body.dark-mode {
+  background: #181a20 !important;
+  color: #e5e7eb !important;
+}
+body.dark-mode .navbar {
+  background: #23272f !important;
+  border-bottom: 1px solid #23272f;
+  color: #e5e7eb;
+}
+body.dark-mode .card, body.dark-mode .modal-content {
+  background: #23272f !important;
+  color: #e5e7eb;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+}
+body.dark-mode .table {
+  background: #23272f;
+  color: #e5e7eb;
+}
+body.dark-mode .table th {
+  background: #181a20;
+  color: #a5b4fc;
+}
+body.dark-mode .table td, body.dark-mode .table th {
+  background: #23272f !important;
+  color: #e5e7eb !important;
+}
+body.dark-mode .table tr {
+  background: #23272f !important;
+}
+body.dark-mode .table .text-center {
+  color: #e5e7eb !important;
+}
+body.dark-mode .form-control, body.dark-mode .form-select {
+  background: #23272f;
+  color: #e5e7eb;
+  border: 1px solid #374151;
+}
+body.dark-mode .form-control:focus, body.dark-mode .form-select:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px #6366f122;
+}
+body.dark-mode .btn-primary {
+  background: #6366f1;
+}
+body.dark-mode .btn-secondary {
+  background: #334155;
+}
+body.dark-mode .btn-warning {
+  background: #fbbf24;
+  color: #23272f;
+}
+body.dark-mode .btn-danger {
+  background: #ef4444;
+}
+body.dark-mode h3, body.dark-mode h5 {
+  color: #a5b4fc;
+}
+body.dark-mode .modal-backdrop {
+  background: #181a20 !important;
+}
+
+@font-face {
+  font-family: 'Font Awesome 5 Free';
+  font-style: normal;
+  font-weight: 900;
+  src: url('/webfonts/fa-solid-900.woff2') format('woff2'),
+       url('/webfonts/fa-solid-900.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Font Awesome 5 Free';
+  font-style: normal;
+  font-weight: 400;
+  src: url('/webfonts/fa-regular-400.woff2') format('woff2'),
+       url('/webfonts/fa-regular-400.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Font Awesome 5 Brands';
+  font-style: normal;
+  font-weight: 400;
+  src: url('/webfonts/fa-brands-400.woff2') format('woff2'),
+       url('/webfonts/fa-brands-400.ttf') format('truetype');
+}
