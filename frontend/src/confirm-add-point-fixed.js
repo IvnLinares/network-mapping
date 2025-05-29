@@ -77,6 +77,8 @@ async function confirmAddPoint() {
       console.error('No se pudo crear ni siquiera localmente:', localError);
       alert('Error crítico: No se pudo agregar el punto ni siquiera localmente.');
     }
+    // A pesar del error, limpiar los campos
+    
     
     // Reset
     tempMarker.value = null;

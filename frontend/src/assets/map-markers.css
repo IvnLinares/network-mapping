@@ -1,0 +1,81 @@
+/* 
+  Enhanced markers for map infrastructure points 
+  This CSS provides modern, animated markers for the map with status indicators
+*/
+
+.marker-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+}
+
+.marker-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background-color: white;
+  border-radius: 50%;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  border: 2px solid #fff;
+  transition: all 0.2s ease;
+  transform-origin: center;
+}
+
+.marker-icon-wrapper i {
+  font-size: 16px;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.2));
+}
+
+.marker-container:hover .marker-icon-wrapper {
+  transform: scale(1.1);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
+}
+
+.marker-selected .marker-icon-wrapper {
+  border-color: #f59e42;
+  box-shadow: 0 0 0 4px rgba(245, 158, 66, 0.3), 0 3px 8px rgba(0, 0, 0, 0.3);
+  animation: pulse-border 1.5s infinite ease-in-out;
+}
+
+@keyframes pulse-border {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(245, 158, 66, 0.3), 0 3px 8px rgba(0, 0, 0, 0.3); }
+  50% { box-shadow: 0 0 0 6px rgba(245, 158, 66, 0.2), 0 3px 8px rgba(0, 0, 0, 0.3); }
+}
+
+.note-indicator {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 10px;
+  height: 10px;
+  background-color: #f59e42;
+  border-radius: 50%;
+  border: 1px solid white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  animation: pulse-note 2s infinite ease-in-out;
+}
+
+@keyframes pulse-note {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+}
+
+body.dark-mode .marker-icon-wrapper {
+  background-color: #1e293b;
+  border-color: #334155;
+}
+
+body.dark-mode .note-indicator {
+  background-color: #f87171;
+  border-color: #334155;
+}
+
+body.dark-mode .marker-selected .marker-icon-wrapper {
+  border-color: #f87171;
+  box-shadow: 0 0 0 4px rgba(248, 113, 113, 0.3), 0 3px 8px rgba(0, 0, 0, 0.4);
+}
