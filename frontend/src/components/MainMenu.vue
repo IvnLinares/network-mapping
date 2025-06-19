@@ -3,7 +3,7 @@
     <div class="container-fluid">
       <a class="navbar-brand d-flex align-items-center gap-2" href="#">
         <i class="fas fa-map-marked-alt logo-icon"></i>
-        <span class="brand-text">TELENETWORK<span class="brand-highlight">.maps</span></span>
+        <span class="brand-text">Network-Mapping<span class="brand-highlight">.maps</span></span>
       </a>
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainMenuNavbar" aria-controls="mainMenuNavbar" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
