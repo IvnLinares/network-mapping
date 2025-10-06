@@ -118,7 +118,7 @@
 import MainMenu from './MainMenu.vue';
 import { inject, ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { supabase } from '../supabase';
+import api from '../api';
 
 const user = inject('user');
 const userRole = inject('userRole');
@@ -159,41 +159,23 @@ onMounted(async () => {
 async function loadStats() {
   try {
     stats.value.loading = true;
-    
     // Cargar conteo de puntos
-    const { count: pointsCount, error: pointsError } = await supabase
-      .from('infrastructure_points')
-      .select('*', { count: 'exact', head: true });
-    
-    if (pointsError) throw pointsError;
+    const pointsCount = await api.getPointsCount();
     stats.value.pointsCount = pointsCount || 0;
-    
+
     // Cargar conteo de notas
-    const { count: notesCount, error: notesError } = await supabase
-      .from('point_notes')
-      .select('*', { count: 'exact', head: true });
-    
-    if (notesError) throw notesError;
+    const notesCount = await api.getNotesCount();
     stats.value.notesCount = notesCount || 0;
-    
+
     // Cargar conteo de mis notas
     if (user.value) {
-      const { count: myNotesCount, error: myNotesError } = await supabase
-        .from('point_notes')
-        .select('*', { count: 'exact', head: true })
-        .eq('created_by', user.value.id);
-      
-      if (myNotesError) throw myNotesError;
+      const myNotesCount = await api.getMyNotesCount(user.value.id);
       stats.value.myNotesCount = myNotesCount || 0;
     }
-    
+
     // Cargar conteo de usuarios (solo para admins)
     if (userRole.value === 'admin') {
-      const { count: usersCount, error: usersError } = await supabase
-        .from('profiles')
-        .select('*', { count: 'exact', head: true });
-      
-      if (usersError) throw usersError;
+      const usersCount = await api.getUsersCount();
       stats.value.usersCount = usersCount || 0;
     }
   } catch (error) {
@@ -207,39 +189,18 @@ async function loadStats() {
 async function loadRecentActivity() {
   try {
     recentActivity.value.loading = true;
-    
     // Cargar notas recientes de todos los usuarios (limitado a 5)
-    const { data: notes, error: notesError } = await supabase
-      .from('point_notes')
-      .select(`
-        id,
-        text,
-        date,
-        point_id,
-        profiles:created_by (
-          email,
-          full_name
-        ),
-        infrastructure_points!inner (
-          name,
-          type
-        )
-      `)
-      .order('date', { ascending: false })
-      .limit(5);
-    
-    if (notesError) throw notesError;
-    
+    const notes = await api.getRecentNotes(5);
     // Transformar los datos para mostrarlos en la actividad reciente
     recentActivity.value.items = notes.map(note => ({
       id: note.id,
       type: 'note',
-      title: `Nota en ${note.infrastructure_points.name || 'Punto sin nombre'}`,
+      title: `Nota en ${note.pointName || 'Punto sin nombre'}`,
       description: note.text,
       date: note.date,
-      author: note.profiles?.full_name || note.profiles?.email || 'Usuario desconocido',
-      pointId: note.point_id,
-      pointType: note.infrastructure_points.type
+      author: note.author || 'Usuario desconocido',
+      pointId: note.pointId,
+      pointType: note.pointType
     }));
   } catch (error) {
     console.error('Error al cargar actividad reciente:', error);
@@ -256,37 +217,19 @@ async function loadMyNotes() {
     myNotes.value.items = [];
     return;
   }
-  
+
   try {
     myNotes.value.loading = true;
-    
     // Cargar mis notas recientes (limitado a 3)
-    const { data: notes, error: notesError } = await supabase
-      .from('point_notes')
-      .select(`
-        id,
-        text,
-        date,
-        point_id,
-        infrastructure_points!inner (
-          name,
-          type
-        )
-      `)
-      .eq('created_by', user.value.id)
-      .order('date', { ascending: false })
-      .limit(3);
-    
-    if (notesError) throw notesError;
-    
+    const notes = await api.getMyRecentNotes(user.value.id, 3);
     // Transformar los datos para mostrarlos
     myNotes.value.items = notes.map(note => ({
       id: note.id,
       text: note.text,
       date: note.date,
-      pointId: note.point_id,
-      pointName: note.infrastructure_points.name,
-      pointType: note.infrastructure_points.type
+      pointId: note.pointId,
+      pointName: note.pointName,
+      pointType: note.pointType
     }));
   } catch (error) {
     console.error('Error al cargar mis notas:', error);

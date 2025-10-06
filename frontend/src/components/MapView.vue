@@ -516,7 +516,7 @@ import { ref, inject, onMounted, onUnmounted, computed } from 'vue';
 import { LMap, LTileLayer, LMarker, LPopup, LControlScale, LPolyline, LPolygon, LTooltip } from '@vue-leaflet/vue-leaflet';
 import MainMenu from './MainMenu.vue';
 import SetupHelp from './SetupHelp.vue';
-import { supabase } from '../supabase';
+import * as api from '../api';
 import { v4 as uuidv4 } from 'uuid'; // Necesitarás instalar: npm install uuid
 import '../assets/connection-alert.css';
 import '../assets/search-results.css';
@@ -795,51 +795,15 @@ async function confirmAddPoint() {
     
     console.log('Intentando guardar punto:', newPoint);
     
-    const { data, error } = await supabase
-      .from('infrastructure_points')
-      .insert([newPoint]);
-      
-    if (error) {
-      console.error('Error detallado al insertar en BD:', error);
-        // Verificar el tipo de error
-      if (error.code === '42P01') { // Tabla no existe
-        Swal.fire({
-          title: 'Error en base de datos',
-          text: 'La tabla infrastructure_points no existe en la base de datos. Por favor, ejecuta el script SQL para crear las tablas.',
-          icon: 'error',
-          confirmButtonColor: '#d33'
-        });
-      } else if (error.code === '23505') { // Violación de unicidad
-        Swal.fire({
-          title: 'Error de duplicado',
-          text: 'Ya existe un punto con ese ID.',
-          icon: 'warning',
-          confirmButtonColor: '#d33'
-        });
-      } else if (error.code === '23503') { // Violación de clave foránea
-        Swal.fire({
-          title: 'Error de referencia',
-          text: 'El tipo de infraestructura seleccionado no es válido.',
-          icon: 'warning',
-          confirmButtonColor: '#d33'
-        });
-      } else {
-        Swal.fire({
-          title: 'Error',
-          text: `Error al guardar en la base de datos: ${error.message}`,
-          icon: 'error',
-          confirmButtonColor: '#d33'
-        });
-      }
-      
+    try {
+      const saved = await api.createInfrastructurePoint(newPoint);
+      infrastructurePoints.value.push(saved);
+      Swal.fire({ icon: 'success', title: '¡Guardado!', text: 'Punto guardado correctamente en la base de datos.', confirmButtonColor: '#3085d6', timer: 2000, timerProgressBar: true });
+    } catch (error) {
+      Swal.fire({ icon: 'error', title: 'Error', text: error.message, confirmButtonColor: '#d33' });
       // A pesar del error, añadir al array local para demostración
       infrastructurePoints.value.push(newPoint);
       console.log('Punto añadido localmente (no en BD)');
-    } else {
-      // Si se guardó correctamente, añadir a la lista local
-      infrastructurePoints.value.push(newPoint);
-      console.log('Punto guardado correctamente en BD y añadido localmente');
-      Swal.fire({ icon: 'success', title: '¡Guardado!', text: 'Punto guardado correctamente en la base de datos.', confirmButtonColor: '#3085d6', timer: 2000, timerProgressBar: true });
     }
     
     // Reset en cualquier caso
@@ -933,30 +897,26 @@ async function saveConnection() {
       allowOutsideClick: false,
       didOpen: () => { Swal.showLoading(); }
     });
-    const { data, error } = await supabase
-      .from('cable_connections')
-      .insert([newConn]);
-    Swal.close();
-    if (error) {
-      console.warn('Error al insertar conexión en BD:', error);
+    try {
+      const saved = await api.createCableConnection(newConn);
+      cableConnections.value.push(saved);
+      Swal.fire({
+        icon: 'success',
+        title: '¡Guardado!',
+        text: 'Conexión guardada correctamente en la base de datos.',
+        confirmButtonColor: '#3085d6',
+        timer: 2000,
+        timerProgressBar: true
+      });
+    } catch (error) {
       Swal.fire({
         icon: 'error',
-        title: 'Error al guardar en Supabase',
-        text: error.message || JSON.stringify(error),
+        title: 'Error',
+        text: error.message,
         confirmButtonColor: '#d33'
       });
       cableConnections.value.push(newConn);
-      return;
     }
-    cableConnections.value.push(newConn);
-    Swal.fire({
-      icon: 'success',
-      title: '¡Guardado!',
-      text: 'Conexión guardada correctamente en la base de datos.',
-      confirmButtonColor: '#3085d6',
-      timer: 2000,
-      timerProgressBar: true
-    });
     // Reset  
     connectionInProgress.value = null;
     newConnection.value = { cableType: 'fiber', color: '#3388ff' };
@@ -991,13 +951,18 @@ async function updateConnection() {
     cable_type: editConnectionData.value.cableType,
     color: editConnectionData.value.color
   };
-  const { error } = await supabase
-    .from('cable_connections')
-    .update(updated)
-    .eq('id', editingConnection.value.id);
-  if (error) {
+  try {
+    const updatedConn = await api.updateCableConnection(editingConnection.value.id, updated);
+    const idx = cableConnections.value.findIndex(c => c.id === editingConnection.value.id);
+    if (idx !== -1) {
+      cableConnections.value[idx] = { ...cableConnections.value[idx], ...updatedConn };
+    }
+    Swal.fire({ icon: 'success', title: '¡Actualizado!', text: 'Conexión actualizada correctamente.', confirmButtonColor: '#3085d6', timer: 1800, timerProgressBar: true });
+    editingConnection.value = null;
+    const modal = bootstrap.Modal.getInstance(document.getElementById('editConnectionModal'));
+    if (modal) modal.hide();
+  } catch (error) {
     Swal.fire({ icon: 'error', title: 'Error', text: error.message, confirmButtonColor: '#d33' });
-    return;
   }
   // Actualizar local
   const idx = cableConnections.value.findIndex(c => c.id === editingConnection.value.id);
@@ -1074,19 +1039,14 @@ async function deleteConnection(connection) {
       cancelButtonText: 'Cancelar'
     }).then(async (result) => {
       if (result.isConfirmed) {
-        // Eliminar de la base de datos
-        const { error } = await supabase
-          .from('cable_connections')
-          .delete()
-          .eq('id', connection.id);
-        
-        if (error) {
-          throw error;
+        // Eliminar en backend
+        try {
+          await api.deleteCableConnection(connection.id);
+        } catch (error) {
+          Swal.fire({ icon: 'error', title: 'Error', text: error.message, timer: 3000, timerProgressBar: true });
         }
-        
         // Eliminar del estado local
         cableConnections.value = cableConnections.value.filter(c => c.id !== connection.id);
-        
         Swal.fire({
           icon: 'success',
           title: '¡Eliminado!',
@@ -1195,20 +1155,9 @@ async function deleteInfrastructurePoint(point) {
   
   try {
     // Primero eliminar todas las conexiones asociadas a este punto
-    const { error: connError } = await supabase
-      .from('cable_connections')
-      .delete()
-      .or(`start_point_id.eq.${point.id},end_point_id.eq.${point.id}`);
-    
-    if (connError) throw connError;
-    
-    // Luego eliminar el punto
-    const { error } = await supabase
-      .from('infrastructure_points')
-      .delete()
-      .eq('id', point.id);
-    
-    if (error) throw error;
+    // Eliminar conexiones asociadas
+    cableConnections.value = cableConnections.value.filter(c => c.start_point_id !== point.id && c.end_point_id !== point.id);
+    await api.deleteInfrastructurePoint(point.id);
     
     // Actualizar listas locales
     infrastructurePoints.value = infrastructurePoints.value.filter(p => p.id !== point.id);
@@ -1403,33 +1352,7 @@ async function loadAllNotes() {
   try {
     console.log('Cargando todas las notas...');
     
-    const { data, error } = await supabase
-      .from('point_notes')
-      .select('*')
-      .order('date', { ascending: false });
-    
-    if (error) {
-      // Manejar diferentes tipos de errores
-      if (error.code === '42P01') {
-        console.warn('La tabla point_notes no existe aún:', error);
-        // No mostrar error al usuario, porque puede ser parte de la configuración inicial
-      } else {
-        console.error('Error al cargar notas:', error);
-        
-        // Solo mostrar alerta en errores críticos (no de tabla inexistente)
-        if (error.code !== '42P01') {
-          Swal.fire({
-            icon: 'warning',
-            title: 'Notas no disponibles',
-            text: 'No se pudieron cargar las notas desde la base de datos.',
-            timer: 3000,
-            timerProgressBar: true
-          });
-        }
-      }
-      return;
-    }
-    
+    const data = await api.getPointNotes();
     if (data && data.length > 0) {
       // Organizar las notas por point_id
       const notesByPointId = {};
@@ -1439,14 +1362,10 @@ async function loadAllNotes() {
         }
         notesByPointId[note.point_id].push(note);
       });
-      
       notes.value = notesByPointId;
-      console.log('Notas cargadas correctamente:', Object.keys(notesByPointId).length, 'puntos con notas');
-      
-      // Actualizar íconos del mapa después de cargar las notas
       updateMapIcons();
     } else {
-      console.log('No se encontraron notas en la base de datos');
+      notes.value = {};
     }
   } catch (error) {
     console.error('Error inesperado al cargar las notas:', error);
@@ -1490,61 +1409,8 @@ async function openNotesModal(point) {
   try {
     console.log(`Cargando notas para el punto ${point.id}...`);
     
-    const { data, error } = await supabase
-      .from('point_notes')
-      .select('*')
-      .eq('point_id', point.id)
-      .order('date', { ascending: false });
-    
-    if (error) {
-      console.error('Error al cargar notas del punto:', error);
-      
-      // Determinar el tipo de error
-      if (error.code === '42P01') {
-        console.warn('La tabla point_notes no existe aún:', error);
-        // Inicializar con array vacío
-        notes.value[point.id] = [];
-        
-        // Sugerencia para crear la tabla si el usuario es administrador
-        if (userRole.value === 'admin') {
-          setTimeout(() => {
-            Swal.fire({
-              icon: 'info',
-              title: 'Tabla de notas no existe',
-              text: 'La tabla para guardar notas no existe aún. Ejecuta el script SQL proporcionado para crearla.',
-              confirmButtonText: 'Entendido'
-            });
-          }, 500);
-        }
-      } else {
-        // Mostrar mensaje de error para otros tipos de error
-        setTimeout(() => {
-          Swal.fire({
-            icon: 'error',
-            title: 'Error al cargar notas',
-            text: 'No se pudieron cargar las notas para este punto.',
-            timer: 3000,
-            timerProgressBar: true
-          });
-        }, 500);
-        
-        // Inicializar con array vacío si no existía
-        if (!notes.value[point.id]) {
-          notes.value[point.id] = [];
-        }
-      }
-      return;
-    }
-    
-    // Actualizar las notas solo para este punto
-    if (data) {
-      notes.value[point.id] = data;
-      console.log(`${data.length} notas cargadas para el punto ${point.id}`);
-    } else {
-      // Si no hay notas, inicializar con un array vacío
-      notes.value[point.id] = [];
-      console.log(`No hay notas para el punto ${point.id}`);
-    }
+    const data = await api.getPointNotes();
+    notes.value[point.id] = data.filter(n => n.point_id === point.id);
   } catch (error) {
     console.error('Error inesperado al cargar notas del punto:', error);
     
@@ -1602,7 +1468,7 @@ async function addNote() {
   });
   
   try {
-    // Crear objeto de nota para guardar en Supabase
+  // Crear objeto de nota para guardar en backend
     const newNote = {
       id: uuidv4(),
       point_id: notePointId.value,
@@ -1613,61 +1479,24 @@ async function addNote() {
       created_at: new Date().toISOString()
     };
     
-    // Guardar en Supabase
-    const { data, error } = await supabase
-      .from('point_notes')
-      .insert([newNote]);
-    
-    if (error) {
-      console.error('Error al guardar nota en Supabase:', error);
-      
-      // Cerrar indicador de carga
-      Swal.close();
-      
-      // Determinar el tipo de error
-      let errorMessage = 'No se pudo guardar la nota en la base de datos.';
-      
-      if (error.code === '23503') {
-        errorMessage = 'El punto de infraestructura ya no existe en la base de datos.';
-      } else if (error.code === '23505') {
-        errorMessage = 'Ya existe una nota con este identificador.';
-      } else if (error.code === '42P01') {
-        errorMessage = 'La tabla de notas no existe. Por favor, ejecuta el script SQL para crearla.';
-      } else if (error.message.includes('permission denied')) {
-        errorMessage = 'No tienes permisos suficientes para agregar notas.';
-      }
-      
-      // Mostrar mensaje de error específico
+  // Guardar en backend
+    try {
+      const saved = await api.createPointNote(newNote);
+      if (!notes.value[notePointId.value]) notes.value[notePointId.value] = [];
+      notes.value[notePointId.value].unshift(saved);
       Swal.fire({
-        icon: 'error',
-        title: 'Error al guardar',
-        text: errorMessage,
-        confirmButtonColor: '#d33'
+        icon: 'success',
+        title: '¡Nota guardada!',
+        text: 'La nota se ha guardado correctamente en la base de datos.',
+        timer: 2000,
+        timerProgressBar: true
       });
-      
-      return;
+      newNoteText.value = '';
+      updateMapIcons();
+    } catch (error) {
+      Swal.close();
+      Swal.fire({ icon: 'error', title: 'Error', text: error.message, confirmButtonColor: '#d33' });
     }
-    
-    // Actualizar la vista local
-    if (!notes.value[notePointId.value]) notes.value[notePointId.value] = [];
-    notes.value[notePointId.value].unshift(newNote);
-    
-    // Cerrar indicador de carga y mostrar confirmación
-    Swal.fire({
-      icon: 'success',
-      title: '¡Nota guardada!',
-      text: 'La nota se ha guardado correctamente en la base de datos.',
-      timer: 2000,
-      timerProgressBar: true
-    });
-    
-    console.log('Nota guardada correctamente en Supabase');
-    
-    // Limpiar el campo de texto
-    newNoteText.value = '';
-    
-    // Actualizar íconos del mapa
-    updateMapIcons();
   } catch (error) {
     console.error('Error general al guardar nota:', error);
     
@@ -1699,33 +1528,16 @@ async function deleteNote(note) {
     
     if (!result.isConfirmed) return;
     
-    // Eliminar de Supabase
-    const { error } = await supabase
-      .from('point_notes')
-      .delete()
-      .eq('id', note.id);
-    
-    if (error) {
-      console.error('Error al eliminar nota de Supabase:', error);
-      Swal.fire({
-        icon: 'error',
-        title: 'Error',
-        text: 'No se pudo eliminar la nota de la base de datos.',
-        timer: 3000,
-        timerProgressBar: true
-      });
-      return;
+  // Eliminar en backend
+    try {
+      await api.deletePointNote(note.id);
+      if (notes.value[notePointId.value]) {
+        notes.value[notePointId.value] = notes.value[notePointId.value].filter(n => n.id !== note.id);
+      }
+      updateMapIcons();
+    } catch (error) {
+      Swal.fire({ icon: 'error', title: 'Error', text: error.message, timer: 3000, timerProgressBar: true });
     }
-    
-    // Actualizar vista local
-    if (notes.value[notePointId.value]) {
-      notes.value[notePointId.value] = notes.value[notePointId.value].filter(n => n.id !== note.id);
-    }
-    
-    console.log('Nota eliminada correctamente');
-    
-    // Actualizar íconos del mapa
-    updateMapIcons();
   } catch (error) {
     console.error('Error general al eliminar nota:', error);
     Swal.fire({
@@ -1790,39 +1602,25 @@ async function editNote(note) {
   }
   
   try {
-    // Actualizar en Supabase
-    const { error } = await supabase
-      .from('point_notes')
-      .update({ text: newText.trim() })
-      .eq('id', note.id);
-    
-    if (error) {
-      console.error('Error al actualizar nota en Supabase:', error);
+  // Actualizar en backend
+    try {
+      const updated = await api.updatePointNote(note.id, { text: newText.trim() });
+      if (notes.value[notePointId.value]) {
+        const noteIndex = notes.value[notePointId.value].findIndex(n => n.id === note.id);
+        if (noteIndex !== -1) {
+          notes.value[notePointId.value][noteIndex].text = updated.text;
+        }
+      }
       Swal.fire({
-        icon: 'error',
-        title: 'Error',
-        text: 'No se pudo actualizar la nota en la base de datos.',
-        timer: 3000,
+        icon: 'success',
+        title: 'Nota actualizada',
+        text: 'La nota se ha actualizado correctamente.',
+        timer: 2000,
         timerProgressBar: true
       });
-      return;
+    } catch (error) {
+      Swal.fire({ icon: 'error', title: 'Error', text: error.message, timer: 3000, timerProgressBar: true });
     }
-    
-    // Actualizar en la vista local
-    if (notes.value[notePointId.value]) {
-      const noteIndex = notes.value[notePointId.value].findIndex(n => n.id === note.id);
-      if (noteIndex !== -1) {
-        notes.value[notePointId.value][noteIndex].text = newText.trim();
-      }
-    }
-    
-    Swal.fire({
-      icon: 'success',
-      title: 'Nota actualizada',
-      text: 'La nota se ha actualizado correctamente.',
-      timer: 2000,
-      timerProgressBar: true
-    });
   } catch (error) {
     console.error('Error general al editar nota:', error);
     Swal.fire({
@@ -1882,65 +1680,25 @@ async function loadMapData() {
     
     // Verificar si existen las tablas necesarias
     try {
-      // Cargar tipos de infraestructura
-      const { data: typesData, error: typesError } = await supabase
-        .from('infrastructure_types')
-        .select('*');
-      
-      if (typesError) {
-        console.warn('Tabla infrastructure_types no encontrada:', typesError);
-        // Asegurar que se usen valores por defecto
-        console.log('Usando tipos de infraestructura predefinidos');
-      } else if (typesData && typesData.length > 0) {
+      const typesData = await api.getInfrastructureTypes();
+      if (typesData && typesData.length > 0) {
         infrastructureTypes.value = typesData;
-        console.log('Tipos de infraestructura cargados:', typesData.length);
-      } else {
-        console.log('No se encontraron tipos de infraestructura, usando predefinidos');
       }
-    
-      // Si la primera tabla existe, intentar cargar el resto
-      // Cargar puntos de infraestructura
-      const { data: pointsData, error: pointsError } = await supabase
-        .from('infrastructure_points')
-        .select('*');
-      
-      if (pointsError) {
-        console.warn('Error al cargar puntos:', pointsError);
-      } else if (pointsData) {
-        infrastructurePoints.value = pointsData;
-        console.log('Puntos de infraestructura cargados:', pointsData.length);
-        
-        // Si no hay puntos, agregar algunos de ejemplo para pruebas
-        if (pointsData.length === 0) {
-          console.log('No hay puntos en la base de datos, creando ejemplos para pruebas');
-          createSamplePoints();
-        }
+      const pointsData = await api.getInfrastructurePoints();
+      infrastructurePoints.value = pointsData;
+      if (pointsData.length === 0) {
+        createSamplePoints();
       }
-        
-      // Cargar conexiones de cables
-      const { data: cablesData, error: cablesError } = await supabase
-        .from('cable_connections')
-        .select('*');
-      
-      if (cablesError) console.warn('Error al cargar conexiones:', cablesError);
-      else if (cablesData) cableConnections.value = cablesData;
-        
-      // Cargar zonas
-      const { data: zonesData, error: zonesError } = await supabase
-        .from('zones')
-        .select('*');
-      
-      if (zonesError) console.warn('Error al cargar zonas:', zonesError);
-      else if (zonesData) zones.value = zonesData;
-      
-      // Cargar notas de los puntos
+      const cablesData = await api.getCableConnections();
+      cableConnections.value = cablesData;
+      const zonesData = await api.getZones();
+      zones.value = zonesData;
       await loadAllNotes();
     } catch (loadError) {
-      console.warn('Error al verificar las tablas:', loadError);
       Swal.fire({
         icon: 'warning',
-        title: 'Tablas no encontradas',
-        text: 'Es necesario crear las tablas en Supabase. Por favor, sigue las instrucciones.',
+        title: 'Error de carga',
+        text: 'No se pudieron cargar los datos desde el backend.',
         confirmButtonColor: '#d33'
       });
     }
@@ -2095,13 +1853,13 @@ async function finishZone() {
       color: formValues.color || '#3388ff',
       created_at: new Date()
     };
-    // Guardar en Supabase
-    const { error } = await supabase.from('zones').insert([zone]);
-    if (error) {
-      Swal.fire({ icon: 'error', title: 'Error', text: error.message, confirmButtonColor: '#d33' });
-    } else {
+    // Guardar en backend
+    try {
+      await api.createZone(zone);
       zones.value.push(zone);
       Swal.fire({ icon: 'success', title: 'Zona guardada', text: 'Zona creada correctamente.', confirmButtonColor: '#3085d6', timer: 2000, timerProgressBar: true });
+    } catch (error) {
+      Swal.fire({ icon: 'error', title: 'Error', text: error.message, confirmButtonColor: '#d33' });
     }
     zoneInProgress.value = null;
   }
@@ -2135,11 +1893,9 @@ async function editZone(zone) {
     }
   });
   if (formValues) {
-    // Actualizar en Supabase
-    const { error } = await supabase.from('zones').update({ name: formValues.name, color: formValues.color }).eq('id', zone.id);
-    if (error) {
-      Swal.fire({ icon: 'error', title: 'Error', text: error.message, confirmButtonColor: '#d33' });
-    } else {
+    // Actualizar en backend
+    try {
+      await api.updateZone(zone.id, { name: formValues.name, color: formValues.color });
       // Actualizar en el estado local
       const idx = zones.value.findIndex(z => z.id === zone.id);
       if (idx !== -1) {
@@ -2147,6 +1903,8 @@ async function editZone(zone) {
         zones.value[idx].color = formValues.color;
       }
       Swal.fire({ icon: 'success', title: 'Zona actualizada', text: 'Los cambios se guardaron correctamente.', confirmButtonColor: '#3085d6', timer: 1800, timerProgressBar: true });
+    } catch (error) {
+      Swal.fire({ icon: 'error', title: 'Error', text: error.message, confirmButtonColor: '#d33' });
     }
   }
 }

@@ -42,7 +42,7 @@
 <script setup>
 import { inject } from 'vue';
 import { useRouter } from 'vue-router';
-import { supabase } from '../supabase';
+import api from '../api';
 
 const props = defineProps({
   userEmail: String,
@@ -53,7 +53,7 @@ const darkMode = inject('darkMode', false);
 const router = useRouter();
 
 const logout = async () => {
-  await supabase.auth.signOut();
+  await api.logout();
   router.push({ name: 'auth' });
 };
 </script>

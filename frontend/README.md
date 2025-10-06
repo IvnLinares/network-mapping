@@ -1,6 +1,7 @@
+
 # Aplicación de Mapeo de Infraestructura
 
-Esta aplicación web permite visualizar y gestionar elementos de infraestructura en un mapa utilizando Vue 3, Leaflet y Supabase.
+Esta aplicación web permite visualizar y gestionar elementos de infraestructura en un mapa utilizando Vue 3, Leaflet, un backend Express y PostgreSQL.
 
 ## Características
 
@@ -8,61 +9,75 @@ Esta aplicación web permite visualizar y gestionar elementos de infraestructura
 - Añadir elementos de infraestructura como postes, mufas, centrales y terminales
 - Crear conexiones de cableado entre elementos
 - Definir zonas geográficas
-- Autenticación de usuarios
-- Almacenamiento de datos en Supabase
+- Backend Express y API REST
+- Almacenamiento de datos en PostgreSQL
 
 ## Configuración del Proyecto
 
 ### Prerequisitos
 
 - Node.js (v16 o superior)
-- Cuenta en Supabase
+- PostgreSQL (local o en servidor)
 
 ### Instalación
 
 1. Clona el repositorio:
    ```bash
    git clone https://github.com/tu-usuario/mapeo.git
-   cd mapeo/frontend
+   cd mapeo
    ```
 
-2. Instala las dependencias:
+2. Instala las dependencias del frontend y backend:
    ```bash
+   cd frontend
+   npm install
+   cd ../backend
    npm install
    ```
 
 3. Configura las variables de entorno:
-   - Crea un archivo `.env` en la carpeta `/frontend` con las siguientes variables:
+   - En `/backend`, crea un archivo `.env` con:
    ```
-   VITE_SUPABASE_URL=https://tu-proyecto.supabase.co
-   VITE_SUPABASE_ANON_KEY=tu-anon-key
+   PGUSER=postgres
+   PGPASSWORD=Alf@adm1n
+   PGHOST=localhost
+   PGPORT=5432
+   PGDATABASE=mapeo
    ```
 
-4. Inicializa la base de datos:
-   - Ve al [panel de Supabase](https://app.supabase.com)
-   - Abre el editor SQL
-   - Ejecuta el script que se encuentra en `scripts/create_map_tables.sql`
-
-5. Inicia el servidor de desarrollo:
+4. Inicializa la base de datos PostgreSQL:
+   - Crea la base de datos y las tablas usando el script `scripts/create_map_tables.sql` en tu servidor PostgreSQL.
+   - Puedes usar PgAdmin, DBeaver o la terminal `psql`:
    ```bash
+   psql -U postgres -d mapeo -f scripts/create_map_tables.sql
+   ```
+
+5. Inicia el backend y el frontend:
+   ```bash
+   # En una terminal
+   cd backend
+   npm start
+
+   # En otra terminal
+   cd frontend
    npm run dev
    ```
 
 ## Solución de Problemas
 
-### La aplicación no se conecta a Supabase
+### La aplicación no se conecta a la base de datos
 
-Si la aplicación no puede conectarse a Supabase, verifica lo siguiente:
+Si la aplicación no puede conectarse a la base de datos, verifica lo siguiente:
 
-1. Asegúrate de que las variables de entorno estén configuradas correctamente en el archivo `.env`
-2. Verifica que tu proyecto de Supabase esté activo
-3. Utiliza la herramienta de diagnóstico incluida en `/public/diagnostico.html`
+1. Asegúrate de que las variables de entorno estén configuradas correctamente en el archivo `.env` del backend
+2. Verifica que el backend Express esté corriendo
+3. Verifica que PostgreSQL esté activo y accesible
 
-### No se pueden crear las tablas en Supabase
+### No se pueden crear las tablas en PostgreSQL
 
 Si tienes problemas al crear las tablas:
 
-1. Asegúrate de tener los permisos adecuados en tu proyecto de Supabase
+1. Asegúrate de tener los permisos adecuados en tu servidor PostgreSQL
 2. Verifica que el script SQL no contenga errores
 3. Ejecuta las sentencias una por una si es necesario
 
@@ -87,7 +102,7 @@ Para crear conexiones entre puntos de infraestructura:
 Si la conexión no aparece después de guardarla:
 - Verifica que no haya errores en la consola del navegador
 - Intenta refrescar la página para cargar las conexiones nuevamente
-- Comprueba que la tabla `cable_connections` exista en Supabase
+- Comprueba que la tabla `cable_connections` exista en tu base de datos PostgreSQL
 
 **Nota importante:** Si necesitas cancelar una conexión en proceso, puedes hacer clic en el botón "Cancelar" en la notificación superior o simplemente cambiar a otro modo de edición.
 
@@ -97,13 +112,10 @@ Si la conexión no aparece después de guardarla:
 
 Si encuentras problemas al guardar puntos en el mapa, verifica lo siguiente:
 
-1. **Tablas en Supabase**: Asegúrate de que has ejecutado correctamente el script SQL para crear las tablas. Puedes acceder a la página de diagnóstico en `/diagnostico.html` para verificar.
 
-2. **Autenticación**: Debes estar autenticado para poder guardar puntos. Verifica que has iniciado sesión correctamente.
+1. **Tablas en PostgreSQL**: Asegúrate de que has ejecutado correctamente el script SQL para crear las tablas.
 
-3. **Permisos RLS**: Verifica que las políticas de seguridad en Supabase permiten operaciones de inserción, actualización y eliminación.
-
-4. **Variables de entorno**: Asegúrate de que las variables de entorno en el archivo `.env` son correctas.
+2. **Variables de entorno**: Asegúrate de que las variables de entorno en el archivo `.env` del backend son correctas.
 
 Para más información, consulta la guía de instalación en `/instalacion.html`.
 
@@ -111,8 +123,9 @@ Para más información, consulta la guía de instalación en `/instalacion.html`
 
 - `src/components/MapView.vue`: Componente principal del mapa
 - `src/components/SetupHelp.vue`: Guía de uso
-- `src/supabase.js`: Configuración de Supabase
-- `scripts/create_map_tables.sql`: Script para crear tablas en Supabase
+- `backend/index.js`: Servidor Express y API REST
+- `backend/db.js`: Conexión a PostgreSQL
+- `scripts/create_map_tables.sql`: Script para crear tablas en PostgreSQL
 
 ## Licencia
 

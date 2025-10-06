@@ -201,7 +201,6 @@
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { supabase } from '../supabase';
 
 const showHelp = ref(false);
 const activeTab = ref('elements'); // Por defecto mostrar la guía de elementos

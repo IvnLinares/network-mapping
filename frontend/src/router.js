@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router';
 import Auth from './components/Auth.vue';
 import Dashboard from './components/Dashboard.vue';
 import UserManagement from './components/UserManagement.vue';
-import { supabase } from './supabase';
+import api from './api';
 
 const routes = [
   { path: '/', name: 'auth', component: Auth },
@@ -19,17 +19,14 @@ const router = createRouter({
 
 router.beforeEach(async (to, from, next) => {
   if (to.meta.requiresAuth) {
-    const { data: { user } } = await supabase.auth.getUser();
+    const session = await api.getSession();
+    const user = session?.user;
     if (!user) {
       return next({ name: 'auth' });
     }
     // Consultar el rol del usuario
-    const { data: profileData } = await supabase
-      .from('profiles')
-      .select('rol')
-      .eq('user_id', user.id)
-      .single();
-    const userRole = profileData?.rol;
+    const profile = await api.getUserProfile(user.id);
+    const userRole = profile?.data?.rol;
     if (to.meta.roles && !to.meta.roles.includes(userRole)) {
       // Si el rol no está permitido, redirigir a inicio o mostrar error
       return next({ name: 'auth' });

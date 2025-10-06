@@ -1,6 +1,6 @@
 <script setup>
 import { ref, provide, onMounted } from 'vue';
-import { supabase } from './supabase';
+import api from './api';
 
 const user = ref(null);
 const userRole = ref('');
@@ -8,13 +8,9 @@ const userRole = ref('');
 const isDark = ref(false);
 
 const fetchUserRole = async (userId) => {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('rol')
-    .eq('user_id', userId)
-    .single();
-  if (data && data.rol) {
-    userRole.value = data.rol;
+  const result = await api.getUserProfile(userId);
+  if (result && result.data && result.data.rol) {
+    userRole.value = result.data.rol;
   } else {
     userRole.value = '';
   }
@@ -34,25 +30,18 @@ const toggleDarkMode = () => {
 };
 
 onMounted(async () => {
-  const { data: { user: currentUser } } = await supabase.auth.getUser();
-  user.value = currentUser;
-  if (currentUser) {
-    await fetchUserRole(currentUser.id);
+  const session = await api.getSession();
+  user.value = session?.user || null;
+  if (session?.user) {
+    await fetchUserRole(session.user.id);
+  } else {
+    userRole.value = '';
   }
-  supabase.auth.onAuthStateChange(async (_event, session) => {
-    user.value = session?.user || null;
-    if (session?.user) {
-      await fetchUserRole(session.user.id);
-    } else {
-      userRole.value = '';
-    }
-  });
   // Dark mode persistencia
   if (localStorage.getItem('darkMode') === '1') {
     isDark.value = true;
     document.body.classList.add('dark-mode');
   }
-  
   // Escuchar el evento toggle-dark-mode desde los componentes
   document.addEventListener('toggle-dark-mode', () => {
     toggleDarkMode();

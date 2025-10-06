@@ -233,7 +233,7 @@
 <script setup>
 import MainMenu from './MainMenu.vue';
 import { ref, inject, computed, onMounted, onUnmounted } from 'vue';
-import { supabase } from '../supabase';
+import api from '../api';
 import Swal from 'sweetalert2';
 
 const user = inject('user');
@@ -280,7 +280,6 @@ const register = async () => {
     registerMessage.value = 'Nombre y apellido son obligatorios.';
     return;
   }
-    // Mostrar indicador de carga
   const loadingSwal = Swal.fire({
     title: 'Registrando usuario...',
     text: 'Por favor espere',
@@ -290,105 +289,35 @@ const register = async () => {
       Swal.showLoading();
     }
   });
-  
   try {
-    // Guardar el token actual antes de crear el usuario
-    const { data: { session: adminSession } } = await supabase.auth.getSession();
-    const adminToken = adminSession?.access_token;
-    
-    if (!adminToken) {
-      loadingSwal.close();
-      throw new Error('No hay sesión activa de administrador');
-    }
-    
-    let userId = null;
-    
-    // Usar el método signUp estándar ya que admin.createUser no está disponible en el cliente
-    console.log('Usando método signUp estándar');
-    const signUpResult = await supabase.auth.signUp({
+    const result = await api.createUser({
       email: registerEmail.value,
       password: registerPassword.value,
-      options: {
-        emailRedirectTo: window.location.origin,
-        data: {
-          nombre: registerNombre.value,
-          apellido: registerApellido.value,
-          rol: registerRole.value
-        }
-      }
-    });
-    
-    if (signUpResult.error) {
-      loadingSwal.close();
-      throw new Error(signUpResult.error.message);
-    }
-    
-    userId = signUpResult.data.user?.id;
-    
-    if (!userId) {
-      loadingSwal.close();
-      throw new Error('No se pudo crear el usuario correctamente.');
-    }
-      // No cerramos la sesión del administrador
-    console.log('UUID del usuario creado:', userId);
-      // Insertar en profiles con el uuid y toda la información
-    const profileData = {
-      user_id: userId,
       nombre: registerNombre.value,
       apellido: registerApellido.value,
       telefono: registerTelefono.value,
-      email: registerEmail.value,
-      rol: registerRole.value,
-      pendiente: false
-    };
-    
-    console.log('Insertando en profiles:', profileData);
-      try {
-      // Usar función Edge para crear perfil (bypass de políticas RLS)
-      console.log('Llamando a la función Edge create-profile...');
-      const { data: profileResult, error: profileError } = await supabase.functions.invoke('create-profile', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${adminToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: profileData
-      });
-      
-      if (profileError) {
-        console.error('Error al crear perfil con función Edge:', profileError);
-        throw new Error('Error al crear perfil: ' + profileError.message);
-      }
-      
-      console.log('Perfil creado exitosamente con función Edge:', profileResult);
-    } catch (profileError) {
-      loadingSwal.close();
-      throw new Error('Usuario creado en autenticación, pero error al guardar perfil: ' + profileError.message);
-    }
-      
+      rol: registerRole.value
+    });
     loadingSwal.close();
-    
+    if (result.error) {
+      throw new Error(result.error);
+    }
     await Swal.fire({
       icon: 'success',
       title: 'Usuario registrado',
       html: `<b>Email:</b> ${registerEmail.value}<br><b>Nombre:</b> ${registerNombre.value} ${registerApellido.value}<br><b>Rol:</b> ${registerRole.value}`,
       confirmButtonText: 'Aceptar',
     });
-    
     await fetchUsers();
     closeModal();
-    
   } catch (error) {
-    console.error('Error en el registro:', error);
     loadingSwal.close();
-    
     await Swal.fire({
       icon: 'error',
       title: 'Error al registrar usuario',
       text: error.message || 'Ocurrió un error durante el registro. Intente nuevamente.',
       confirmButtonText: 'Aceptar',
     });
-    
     registerMessage.value = error.message || 'Error al registrar usuario.';
   }
 };
@@ -437,127 +366,20 @@ const toggleActionMenu = (event) => {
   }, 0);
 };
 
-// Sincronizar perfil al login si estaba pendiente y el email ya está verificado
-const syncProfileOnLogin = async () => {
-  try {
-    const { data: userData } = await supabase.auth.getUser();
-    const user = userData?.user;
-    if (!user) return;
-    
-    // Buscar perfil existente
-    const { data: profile, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('user_id', user.id)
-      .maybeSingle();
-    
-    if (error) {
-      console.error('Error al buscar perfil:', error);
-      return;
-    }
-    
-    // Si no hay perfil, crearlo usando la función Edge para bypass de RLS
-    if (!profile) {
-      console.log('No se encontró perfil para el usuario, creando uno nuevo mediante Edge Function');
-      const metadata = user.user_metadata || {};
-      
-      const newProfile = {
-        user_id: user.id,
-        nombre: metadata.nombre || '',
-        apellido: metadata.apellido || '',
-        telefono: metadata.telefono || '',
-        email: user.email,
-        rol: metadata.rol || 'tecnico', // Rol por defecto
-        pendiente: false
-      };
-      
-      try {
-        // Obtener token actual para autorización
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        
-        if (!token) {
-          console.error('No hay sesión activa para crear perfil');
-          return;
-        }
-        
-        // Usar función Edge para crear perfil (bypass de políticas RLS)
-        const { data: profileResult, error: profileError } = await supabase.functions.invoke('create-profile', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: newProfile
-        });
-        
-        if (profileError) {
-          console.error('Error al crear perfil con función Edge:', profileError);
-        } else {
-          console.log('Perfil creado exitosamente con función Edge:', profileResult);
-        }
-      } catch (e) {
-        console.error('Error al crear perfil:', e);
-      }
-      return;
-    }
-    
-    // Si el perfil está pendiente y el email ya está verificado, actualizar usando la función Edge
-    if (profile.pendiente && (user.email_confirmed_at || user.confirmed_at)) {
-      try {
-        // Obtener token actual para autorización
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        
-        if (!token) {
-          console.error('No hay sesión activa para actualizar perfil');
-          return;
-        }
-        
-        // Usar función Edge para actualizar perfil (bypass de políticas RLS)
-        const { data: profileResult, error: profileError } = await supabase.functions.invoke('create-profile', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: {
-            ...profile,
-            pendiente: false,
-            email: user.email
-          }
-        });
-        
-        if (profileError) {
-          console.error('Error al actualizar perfil con función Edge:', profileError);
-        } else {
-          console.log('Perfil actualizado exitosamente con función Edge:', profileResult);
-        }
-      } catch (e) {
-        console.error('Error al actualizar perfil:', e);
-      }
-    }
-  } catch (e) {
-    console.error('Error en syncProfileOnLogin:', e);
-  }
-};
 
 onMounted(async () => {
-  // Verificar la estructura de la tabla profiles
+  // Verificar la estructura de la tabla profiles (opcional, depende del backend)
   await checkProfilesTable();
-  
-  // Primero sincronizar el perfil para asegurarnos de que exista
-  await syncProfileOnLogin();
-  
-  // Luego cargar todos los usuarios
+
+  // Cargar todos los usuarios
   await fetchUsers();
-  
+
   // Configurar una recarga automática cada 30 segundos
   const interval = setInterval(async () => {
     console.log('Recargando usuarios automáticamente...');
     await fetchUsers();
   }, 30000);
-  
+
   // Limpiar intervalo al desmontar
   onUnmounted(() => {
     clearInterval(interval);
@@ -590,8 +412,6 @@ const updateUser = async () => {
     editMessage.value = 'Nombre y apellido son obligatorios.';
     return;
   }
-  
-  // Mostrar indicador de carga
   const loadingSwal = Swal.fire({
     title: 'Actualizando...',
     text: 'Por favor espere',
@@ -601,34 +421,30 @@ const updateUser = async () => {
       Swal.showLoading();
     }
   });
-  
-  // Actualizar datos en profiles
-  const { error } = await supabase
-    .from('profiles')
-    .update({
+  try {
+    const result = await api.updateUser(editUserData.value.id, {
       nombre: editUserData.value.nombre,
       apellido: editUserData.value.apellido,
       telefono: editUserData.value.telefono,
-      rol: editUserData.value.role // La propiedad debe ser 'rol' para coincidir con el campo en la BD
-    })
-    .eq('user_id', editUserData.value.id);
-    
-  loadingSwal.close();
-  
-  if (error) {
-    editMessage.value = 'Error al actualizar: ' + error.message;
-    return;
+      rol: editUserData.value.role
+    });
+    loadingSwal.close();
+    if (result.error) {
+      editMessage.value = 'Error al actualizar: ' + result.error;
+      return;
+    }
+    await Swal.fire({
+      icon: 'success',
+      title: 'Usuario actualizado',
+      text: 'Los datos del usuario se han actualizado correctamente',
+      confirmButtonText: 'Aceptar',
+    });
+    await fetchUsers();
+    closeEditModal();
+  } catch (error) {
+    loadingSwal.close();
+    editMessage.value = 'Error al actualizar: ' + (error.message || 'Error desconocido');
   }
-  
-  await Swal.fire({
-    icon: 'success',
-    title: 'Usuario actualizado',
-    text: 'Los datos del usuario se han actualizado correctamente',
-    confirmButtonText: 'Aceptar',
-  });
-  
-  await fetchUsers();
-  closeEditModal();
 };
 
 // Eliminación
@@ -637,8 +453,6 @@ const deleteUser = async (user) => {
   document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
     menu.classList.remove('show');
   });
-  
-  // Usar SweetAlert2 para confirmación
   const result = await Swal.fire({
     title: '¿Estás seguro?',
     html: `¿Realmente deseas eliminar al usuario <b>${user.nombre} ${user.apellido}</b>?<br>Esta acción no se puede deshacer.`,
@@ -649,10 +463,7 @@ const deleteUser = async (user) => {
     confirmButtonText: 'Sí, eliminar',
     cancelButtonText: 'Cancelar'
   });
-  
   if (!result.isConfirmed) return;
-  
-  // Mostrar indicador de carga
   const loadingSwal = Swal.fire({
     title: 'Eliminando...',
     text: 'Por favor espere',
@@ -662,36 +473,19 @@ const deleteUser = async (user) => {
       Swal.showLoading();
     }
   });
-  
   try {
-    // Primero eliminar de profiles
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .delete()
-      .eq('user_id', user.id);
-      
-    if (profileError) throw new Error('No se pudo eliminar el perfil: ' + profileError.message);
-    
-    // Luego intentar eliminar el usuario de auth
-    try {
-      // Nota: esto requiere permisos de admin y puede fallar
-      await supabase.auth.admin.deleteUser(user.id);
-    } catch (authError) {
-      console.warn('No se pudo eliminar el usuario de autenticación. Puede requerir permisos de administrador:', authError);
-      // Continuamos incluso si esto falla
-    }
-    
+    const apiResult = await api.deleteUser(user.id);
     loadingSwal.close();
-    
+    if (apiResult.error) {
+      throw new Error(apiResult.error);
+    }
     await Swal.fire({
       icon: 'success',
       title: 'Usuario eliminado',
       text: `El usuario ${user.nombre} ${user.apellido} ha sido eliminado correctamente`,
       confirmButtonText: 'Aceptar',
     });
-    
     await fetchUsers();
-    
   } catch (error) {
     loadingSwal.close();
     await Swal.fire({
@@ -713,151 +507,19 @@ const lastUpdateTime = ref(new Date().toLocaleString('es-ES'));
 const fetchUsers = async () => {
   isLoading.value = true;
   try {
-    // Traer todos los perfiles de la tabla profiles
-    const { data: profiles, error: profilesError } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('nombre', { ascending: true });
-
-    if (profilesError) {
-      throw new Error(profilesError.message);
+    const result = await api.getUsers();
+    if (result.error) {
+      throw new Error(result.error);
     }
-
-    // Ahora necesitamos obtener datos de autenticación usando la API admin
-    // Nota: esto solo funciona si tienes permisos de administrador en Supabase
-    let authUsers = [];
-    try {
-      // Obtener el token actual para pasarlo en la autorización
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;      if (!token) {
-        console.warn('No hay sesión activa para obtener usuarios');
-        throw new Error('No hay sesión activa');
-      }
-        const { data: adminData, error: adminError } = await supabase.functions.invoke('get-auth-users', {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
-      
-      if (!adminError && adminData) {
-        console.log('Datos recibidos de auth:', adminData);
-        // Asegurarse de que authUsers sea siempre un array
-        authUsers = Array.isArray(adminData) ? adminData : [];
-        console.log('Usuarios procesados:', authUsers.length, 'Primer usuario:', authUsers[0] || 'Ninguno');
-      } else {
-        console.warn('No se pudieron obtener los datos de autenticación:', adminError);
-        // Intentar una segunda vez si falló
-        try {          const { data: secondTry, error: secondError } = await supabase.functions.invoke('get-auth-users', {
-            method: 'GET',
-            headers: {
-              Authorization: `Bearer ${token}`
-            }
-          });
-          
-          if (!secondError && secondTry) {
-            console.log('Datos recibidos en segundo intento:', secondTry);
-            // Asegurarse de que authUsers sea siempre un array
-            authUsers = Array.isArray(secondTry) ? secondTry : [];
-            console.log('Usuarios procesados en segundo intento:', authUsers.length);
-          } else {
-            console.error('Segunda vez también falló:', secondError);
-          }
-        } catch (retryErr) {
-          console.error('Error en segundo intento:', retryErr);
-        }
-      }    } catch (err) {
-      console.warn('Error al obtener datos de autenticación:', err);
-    }
-    
-    // Combinar datos de profiles con datos de auth
-    if (profiles && profiles.length > 0) {
-      console.log('Perfiles encontrados:', profiles.length);
-      users.value = profiles.map(profile => {
-        // Buscar el usuario correspondiente en authUsers
-        const authUser = authUsers.find(u => u.id === profile.user_id) || {};
-        console.log(`Perfil ${profile.user_id} tiene auth info:`, !!authUser.id);
-        
-        return {
-          id: profile.user_id,
-          email: profile.email || '',
-          role: profile.rol || '',
-          nombre: profile.nombre || '',
-          apellido: profile.apellido || '',
-          telefono: profile.telefono || '',
-          // Datos adicionales de auth
-          emailVerificado: authUser.email_confirmed_at ? true : false,
-          ultimoLogin: authUser.last_sign_in_at || 'Nunca',
-          fechaCreacion: authUser.created_at || profile.created_at || '',
-          metodoLogin: authUser.app_metadata?.provider || 'email',
-          estado: authUser.banned ? 'Bloqueado' : (authUser.confirmed_at ? 'Activo' : 'Pendiente')
-        };
-      });
-    } else {
-      console.log('No se encontraron perfiles en la base de datos');    // Si no hay perfiles pero sí hay usuarios de auth, crear objetos para ellos
-    // y posiblemente intentar sincronizar los perfiles
-    if (authUsers && authUsers.length > 0) {
-      console.log('Intentando procesar usuarios de auth sin perfiles:', authUsers.length);
-      const usersWithoutProfiles = [];
-      
-      // Crear objetos para usuarios sin perfil
-      for (const authUser of authUsers) {
-        const metadata = authUser.user_metadata || {};
-        usersWithoutProfiles.push({
-          id: authUser.id,
-          email: authUser.email || '',
-          role: metadata.rol || 'tecnico', // Rol por defecto
-          nombre: metadata.nombre || '',
-          apellido: metadata.apellido || '',
-          telefono: metadata.telefono || '',
-          emailVerificado: authUser.email_confirmed_at ? true : false,
-          ultimoLogin: authUser.last_sign_in_at || 'Nunca',
-          fechaCreacion: authUser.created_at || '',
-          metodoLogin: authUser.app_metadata?.provider || 'email',
-          estado: authUser.banned ? 'Bloqueado' : (authUser.confirmed_at ? 'Activo' : 'Pendiente')
-        });
-        
-        // Intentar crear perfiles para estos usuarios
-        try {
-          const profileData = {
-            user_id: authUser.id,
-            email: authUser.email || '',
-            nombre: metadata.nombre || '',
-            apellido: metadata.apellido || '',
-            telefono: metadata.telefono || '',
-            rol: metadata.rol || 'tecnico',
-            pendiente: false
-          };
-          
-          const { error: insertError } = await supabase
-            .from('profiles')
-            .upsert([profileData], { onConflict: 'user_id' });
-          
-          if (insertError) {
-            console.error(`Error al crear perfil para ${authUser.id}:`, insertError);
-          } else {
-            console.log(`Perfil creado/actualizado para ${authUser.id}`);
-          }
-        } catch (e) {
-          console.error('Error en sincronización de perfil:', e);
-        }
-      }
-      
-      users.value = usersWithoutProfiles;
-      console.log('Usuarios procesados desde auth:', users.value.length);
-    } else {
-      users.value = [];
-      console.log('No hay usuarios disponibles');
-    }
-    }
+    users.value = result.data || [];
   } catch (error) {
-    console.error('Error al cargar usuarios:', error);
     users.value = [];
     await Swal.fire({
       icon: 'error',
       title: 'Error al cargar usuarios',
       text: error.message || 'No se pudieron cargar los usuarios. Intenta nuevamente.',
-      confirmButtonText: 'Aceptar',    });
+      confirmButtonText: 'Aceptar',
+    });
   } finally {
     isLoading.value = false;
     lastUpdateTime.value = new Date().toLocaleString('es-ES');
@@ -939,145 +601,19 @@ const viewUserDetails = (user) => {
 
 // Función para forzar la sincronización de perfiles
 const forceSync = async () => {
-  const loadingSwal = Swal.fire({
-    title: 'Sincronizando perfiles...',
-    text: 'Por favor espere',
-    allowOutsideClick: false,
-    showConfirmButton: false,
-    willOpen: () => {
-      Swal.showLoading();
-    }
+  // No implementado: la sincronización avanzada depende de la lógica del backend.
+  await fetchUsers();
+  await Swal.fire({
+    icon: 'info',
+    title: 'Sincronización',
+    text: 'La sincronización avanzada de perfiles debe implementarse en el backend.',
+    confirmButtonText: 'Aceptar',
   });
-  
-  try {
-    // Obtener datos de autenticación
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token;
-    
-    if (!token) {
-      throw new Error('No hay sesión activa de administrador');
-    }
-    
-    // Obtener usuarios de autenticación
-    const { data: authUsers, error: authError } = await supabase.functions.invoke('get-auth-users', {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    });
-    
-    if (authError || !authUsers) {
-      throw new Error('No se pudieron obtener los usuarios de autenticación');
-    }
-    
-    const users = Array.isArray(authUsers) ? authUsers : [];
-    console.log(`Sincronizando ${users.length} usuarios`);
-    
-    let created = 0;
-    let updated = 0;
-    let errors = 0;
-    
-    // Crear o actualizar perfiles para todos los usuarios
-    for (const authUser of users) {
-      const metadata = authUser.user_metadata || {};
-      
-      // Preparar datos del perfil
-      const profileData = {
-        user_id: authUser.id,
-        email: authUser.email || '',
-        nombre: metadata.nombre || '',
-        apellido: metadata.apellido || '',
-        telefono: metadata.telefono || '',
-        rol: metadata.rol || 'tecnico',
-        pendiente: false
-      };
-        try {
-        // Usar función Edge para crear perfil (bypass de políticas RLS)
-        console.log(`Llamando a la función Edge para ${authUser.email}...`);
-        const { data: profileResult, error: profileError } = await supabase.functions.invoke('create-profile', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: profileData
-        });
-        
-        if (profileError) {
-          console.error(`Error al crear perfil para ${authUser.email}:`, profileError);
-          console.error('Detalles del error:', profileError.details || 'No hay detalles adicionales');
-          errors++;
-        } else if (profileResult?.error) {
-          // Manejar errores que vienen en el resultado
-          console.error(`Error en la función Edge para ${authUser.email}:`, profileResult.error);
-          console.error('Código:', profileResult.code);
-          console.error('Detalles:', profileResult.details);
-          errors++;
-        } else {
-          if (profileResult?.created) {
-            created++;
-            console.log(`Perfil creado para ${authUser.email}:`, profileResult);
-          } else {
-            updated++;
-            console.log(`Perfil actualizado para ${authUser.email}:`, profileResult);
-          }
-        }
-      } catch (e) {
-        console.error(`Error inesperado al procesar perfil para ${authUser.email}:`, e);
-        errors++;
-      }
-    }
-    
-    loadingSwal.close();
-    
-    await Swal.fire({
-      icon: 'success',
-      title: 'Sincronización completada',
-      html: `
-        <div class="text-start">
-          <p><b>Perfiles creados:</b> ${created}</p>
-          <p><b>Perfiles actualizados:</b> ${updated}</p>
-          <p><b>Errores:</b> ${errors}</p>
-        </div>
-      `,
-      confirmButtonText: 'Aceptar',
-    });
-    
-    // Recargar usuarios
-    await fetchUsers();
-    
-  } catch (error) {
-    loadingSwal.close();
-    console.error('Error en sincronización forzada:', error);
-    
-    await Swal.fire({
-      icon: 'error',
-      title: 'Error en sincronización',
-      text: error.message || 'Ocurrió un error durante la sincronización',
-      confirmButtonText: 'Aceptar',
-    });
-  }
 };
 
 // Verificar estructura de la tabla profiles
 const checkProfilesTable = async () => {
-  try {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .limit(1);
-      
-    if (error) {
-      console.error('Error al verificar tabla profiles:', error);
-      console.log('Código:', error.code);
-      console.log('Mensaje:', error.message);
-      console.log('Detalles:', error.details);
-    } else {
-      console.log('Tabla profiles accesible. Estructura:', data && data.length > 0 ? Object.keys(data[0]) : 'No hay datos');
-    }
-  } catch (e) {
-    console.error('Error al verificar tabla profiles:', e);
-  }
+  // No implementado: la verificación de la tabla depende de la lógica del backend.
 };
 </script>
 

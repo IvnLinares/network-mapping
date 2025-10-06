@@ -78,7 +78,7 @@
 <script setup>
 import { ref, onMounted, provide, computed } from 'vue';
 import { useRouter } from 'vue-router';
-import { supabase } from '../supabase';
+import api from '../api';
 import Swal from 'sweetalert2';
 
 const loginEmail = ref('');
@@ -102,13 +102,9 @@ const validatePassword = (password) => {
 };
 
 const fetchUserProfile = async (userId) => {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('nombre, apellido, telefono, rol, email')
-    .eq('user_id', userId)
-    .single();
-  if (data) {
-    userProfile.value = data;
+  const result = await api.getUserProfile(userId);
+  if (result && result.data) {
+    userProfile.value = result.data;
   } else {
     userProfile.value = { nombre: '', apellido: '', telefono: '', rol: '', email: '' };
   }
@@ -125,22 +121,22 @@ const login = async () => {
     return;
   }
   loading.value = true;
-  const { data, error } = await supabase.auth.signInWithPassword({
+  const result = await api.login({
     email: loginEmail.value,
-    password: loginPassword.value,
+    password: loginPassword.value
   });
   loading.value = false;
-  if (error) {
-    loginMessage.value = error.message;
+  if (result.error) {
+    loginMessage.value = result.error;
     return;
   }
-  if (data && data.user) {
-    user.value = data.user;
-    await fetchUserProfile(data.user.id);
+  if (result.data && result.data.user) {
+    user.value = result.data.user;
+    await fetchUserProfile(result.data.user.id);
     await Swal.fire({
       icon: 'success',
       title: 'Login exitoso',
-      text: `Bienvenido, ${data.user.email}`,
+      text: `Bienvenido, ${result.data.user.email}`,
       timer: 1500,
       timerProgressBar: true,
       showConfirmButton: false
@@ -150,25 +146,19 @@ const login = async () => {
 };
 
 const logout = async () => {
-  await supabase.auth.signOut();
+  await api.logout();
   user.value = null;
   userProfile.value = { nombre: '', apellido: '', telefono: '', rol: '', email: '' };
 };
 
 onMounted(async () => {
-  const { data: { user: currentUser } } = await supabase.auth.getUser();
-  user.value = currentUser;
-  if (currentUser) {
-    await fetchUserProfile(currentUser.id);
+  const session = await api.getSession();
+  user.value = session?.user || null;
+  if (session?.user) {
+    await fetchUserProfile(session.user.id);
+  } else {
+    userProfile.value = { nombre: '', apellido: '', telefono: '', rol: '', email: '' };
   }
-  supabase.auth.onAuthStateChange(async (_event, session) => {
-    user.value = session?.user || null;
-    if (session?.user) {
-      await fetchUserProfile(session.user.id);
-    } else {
-      userProfile.value = { nombre: '', apellido: '', telefono: '', rol: '', email: '' };
-    }
-  });
 });
 
 provide('user', user);
